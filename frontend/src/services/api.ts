@@ -102,6 +102,12 @@ export const updateMessage = async (id: string, data: { is_read?: boolean; is_st
   return response.data;
 };
 
+export const deleteMessage = async (id: string) => {
+  const response = await apiClient.delete(`/api/messages/${id}`);
+  return response.data;
+};
+
+
 // Sync
 export interface SyncRequest {
   account_id: number;

@@ -31,7 +31,7 @@ CREATE TABLE accounts (
 )
 ''')
 
-# Create messages table WITH folder column
+# Create messages table
 cursor.execute('''
 CREATE TABLE messages (
     id VARCHAR PRIMARY KEY,
@@ -52,7 +52,6 @@ CREATE TABLE messages (
     has_attachments BOOLEAN DEFAULT 0,
     is_read BOOLEAN DEFAULT 0,
     is_starred BOOLEAN DEFAULT 0,
-    folder VARCHAR DEFAULT 'INBOX',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 )
@@ -120,7 +119,7 @@ conn.close()
 print("✅ Database recreated successfully!")
 print("Tables created:")
 print("  - accounts")
-print("  - messages (with folder column)")
+print("  - messages")
 print("  - attachments")
 print("  - classifications")
 print("  - service_whitelist")

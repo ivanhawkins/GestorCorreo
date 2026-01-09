@@ -112,7 +112,7 @@ async def get_message(
     message_id: str,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get a specific message by ID with full details."""
+    """Get a specific message by ID with full details including body."""
     result = await db.execute(
         select(Message, Classification.final_label).outerjoin(
             Classification, Message.id == Classification.message_id
@@ -142,10 +142,36 @@ async def get_message(
         "is_read": message.is_read,
         "is_starred": message.is_starred,
         "has_attachments": message.has_attachments,
-        "classification_label": classification_label
+        "classification_label": classification_label,
+        "body_text": message.body_text,
+        "body_html": message.body_html
     }
     
     return message_dict
+
+
+@router.get("/{message_id}/body")
+async def get_message_body(
+    message_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get message body (text and HTML) for a specific message."""
+    result = await db.execute(
+        select(Message).where(Message.id == message_id)
+    )
+    message = result.scalar_one_or_none()
+    
+    if not message:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message not found"
+        )
+    
+    return {
+        "body_text": message.body_text,
+        "body_html": message.body_html
+    }
+
 
 
 @router.patch("/{message_id}/read")

@@ -505,6 +505,12 @@ async def sync_account_messages(
                 logger.warning(f"Skipping UID {uid} - failed to fetch headers")
                 continue
             
+            # Fetch full message body
+            body_data = imap.fetch_full_message_body(uid)
+            body_text = body_data.get('body_text') if body_data else None
+            body_html = body_data.get('body_html') if body_data else None
+            has_attachments = len(body_data.get('attachments', [])) > 0 if body_data else False
+            
             # Create message record
             message = Message(
                 id=str(uuid.uuid4()),
@@ -518,9 +524,11 @@ async def sync_account_messages(
                 cc_addresses=headers['cc_addresses'],
                 date=headers['date'],
                 snippet=headers['snippet'],
+                body_text=body_text,
+                body_html=body_html,
                 is_read=False,
                 is_starred=False,
-                has_attachments=False
+                has_attachments=has_attachments
             )
             
             db.add(message)
