@@ -271,34 +271,6 @@ async def toggle_star(
     return {"id": message.id, "is_starred": message.is_starred}
 
 
-@router.patch("/{message_id}/folder")
-async def move_to_folder(
-    message_id: str,
-    folder: str = Query(...),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Move message to a different folder.
-    
-    - **message_id**: Message ID
-    - **folder**: Target folder (INBOX, Archive, etc.)
-    """
-    result = await db.execute(
-        select(Message).where(Message.id == message_id)
-    )
-    message = result.scalar_one_or_none()
-    
-    if not message:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Message not found"
-        )
-    
-    message.folder = folder
-    await db.commit()
-    await db.refresh(message)
-    
-    return {"id": message.id, "folder": message.folder}
 
 
 @router.delete("/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -307,7 +279,7 @@ async def delete_message(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Delete a message.
+    Move message to Deleted folder.
     
     - **message_id**: Message ID
     """
@@ -322,7 +294,7 @@ async def delete_message(
             detail="Message not found"
         )
     
-    await db.delete(message)
+    message.folder = "Deleted"
     await db.commit()
     
     return None

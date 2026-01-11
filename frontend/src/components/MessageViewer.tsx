@@ -76,11 +76,9 @@ export default function MessageViewer({ message, onClose, onReply, onForward }: 
     }
 
     const handleDelete = async () => {
-        if (!confirm('¿Eliminar este mensaje?')) return
-
         try {
             await deleteMessage.mutateAsync(message.id)
-            showSuccess('Mensaje eliminado')
+            showSuccess('Mensaje movido a Eliminados')
             onClose()
         } catch (error: any) {
             showError('Error al eliminar el mensaje')
@@ -128,7 +126,14 @@ export default function MessageViewer({ message, onClose, onReply, onForward }: 
                         <button className="btn-action" onClick={handleForward} title="Reenviar">
                             ➡️
                         </button>
-                        <button className="btn-action btn-danger" onClick={handleDelete} title="Eliminar">
+                        <button
+                            className="btn-action btn-danger"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete();
+                            }}
+                            title="Eliminar"
+                        >
                             🗑️
                         </button>
                         <button className="close-btn" onClick={onClose}>×</button>

@@ -126,15 +126,6 @@ export default function MessageList({ messages, onMessageClick }: MessageListPro
                         >
                             {message.is_starred ? '⭐' : '☆'}
                         </button>
-                        {message.folder !== 'Archive' && (
-                            <button
-                                className="btn-archive"
-                                onClick={(e) => handleArchive(e, message.id)}
-                                title="Archive"
-                            >
-                                📦
-                            </button>
-                        )}
                         {!message.classification_label && (
                             <button
                                 className="btn-classify"

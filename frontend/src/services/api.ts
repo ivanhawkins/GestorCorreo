@@ -43,12 +43,12 @@ export interface AccountCreate {
 }
 
 export const getAccounts = async (): Promise<Account[]> => {
-  const response = await apiClient.get('/api/accounts');
+  const response = await apiClient.get('/api/accounts/');
   return response.data;
 };
 
 export const createAccount = async (data: AccountCreate): Promise<Account> => {
-  const response = await apiClient.post('/api/accounts', data);
+  const response = await apiClient.post('/api/accounts/', data);
   return response.data;
 };
 
@@ -88,7 +88,7 @@ export const getMessages = async (params?: {
   classification_label?: string;  // Filter by classification category
   search?: string;
 }): Promise<Message[]> => {
-  const response = await apiClient.get('/api/messages', { params });
+  const response = await apiClient.get('/api/messages/', { params });
   return response.data;
 };
 
@@ -116,7 +116,7 @@ export interface SyncRequest {
 }
 
 export const startSync = async (data: SyncRequest) => {
-  const response = await apiClient.post('/api/sync/start', data);
+  const response = await apiClient.post('/api/sync/start/', data);
   return response.data;
 };
 

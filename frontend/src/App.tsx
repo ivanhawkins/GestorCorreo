@@ -12,7 +12,7 @@ import SearchBar from './components/SearchBar'
 import Toast from './components/Toast'
 import { useToast } from './hooks/useToast'
 
-type CategoryFilter = 'all' | 'starred' | 'archive' | 'Interesantes' | 'SPAM' | 'EnCopia' | 'Servicios'
+type CategoryFilter = 'all' | 'starred' | 'Interesantes' | 'SPAM' | 'EnCopia' | 'Servicios'
 
 function App() {
   const [selectedAccount, setSelectedAccount] = useState<number | null>(null)
@@ -30,16 +30,24 @@ function App() {
   const { toasts, removeToast, showSuccess, showError, showInfo } = useToast()
 
   const { data: accounts, isLoading: accountsLoading } = useAccounts()
-  // Fetch messages with current filters
+
+  // Query para mensajes filtrados (lo que se muestra en pantalla)
   const { data: messages, isLoading: messagesLoading, refetch: refetchMessages } = useMessages(
     selectedAccount ? {
       account_id: selectedAccount,
-      classification_label: (categoryFilter !== 'all' && categoryFilter !== 'starred' && categoryFilter !== 'archive') ? categoryFilter : undefined,
-      folder: categoryFilter === 'archive' ? 'Archive' : (categoryFilter === 'starred' ? undefined : 'INBOX'),
+      classification_label: (categoryFilter !== 'all' && categoryFilter !== 'starred') ? categoryFilter : undefined,
       is_starred: categoryFilter === 'starred' ? true : undefined,
       ...searchFilters
     } : undefined
   )
+
+  // Query para TODOS los mensajes de la cuenta (para calcular contadores)
+  const { data: allMessages } = useMessages(
+    selectedAccount ? {
+      account_id: selectedAccount
+    } : undefined
+  )
+
   const startSync = useStartSync()
   const bulkMarkAsRead = useBulkMarkAsRead()
 
@@ -169,11 +177,11 @@ function App() {
 
   // Calculate message counts
   const getMessageCounts = (filter: CategoryFilter) => {
-    if (!messages) return { total: 0, unread: 0 }
+    if (!allMessages) return { total: 0, unread: 0 }
 
     const filtered = filter === 'all'
-      ? messages
-      : messages.filter(m => m.classification_label === filter)
+      ? allMessages.filter(m => !m.classification_label)  // Inbox: solo mensajes sin clasificar
+      : allMessages.filter(m => m.classification_label === filter)
 
     return {
       total: filtered.length,
@@ -191,7 +199,6 @@ function App() {
     switch (categoryFilter) {
       case 'all': return 'Inbox'
       case 'starred': return 'Starred'
-      case 'archive': return 'Archive'
       case 'Interesantes': return 'Interesantes'
       case 'SPAM': return 'SPAM'
       case 'EnCopia': return 'En Copia'
@@ -269,12 +276,8 @@ function App() {
           >
             📥 Inbox
             <span className="folder-count">
-              {allCounts.total > 0 && (
-                <>
-                  {allCounts.unread > 0 && <span className="unread-badge">{allCounts.unread}</span>}
-                  <span className="total-count">{allCounts.total}</span>
-                </>
-              )}
+              {allCounts.unread > 0 && <span className="unread-badge">{allCounts.unread}</span>}
+              <span className="total-count">{allCounts.total}</span>
             </span>
           </div>
           <div
@@ -283,34 +286,18 @@ function App() {
           >
             ⭐ Starred
             <span className="folder-count">
-              {(messages?.filter(m => m.is_starred).length || 0) > 0 && (
-                <span className="total-count">{messages?.filter(m => m.is_starred).length}</span>
-              )}
+              <span className="total-count">{allMessages?.filter(m => m.is_starred).length || 0}</span>
             </span>
           </div>
-          <div
-            className={`folder-item ${categoryFilter === 'archive' ? 'active' : ''}`}
-            onClick={() => handleCategoryClick('archive')}
-          >
-            📦 Archive
-            <span className="folder-count">
-              {(messages?.filter(m => m.folder === 'Archive').length || 0) > 0 && (
-                <span className="total-count">{messages?.filter(m => m.folder === 'Archive').length}</span>
-              )}
-            </span>
-          </div>
+
           <div
             className={`folder-item ${categoryFilter === 'Interesantes' ? 'active' : ''}`}
             onClick={() => handleCategoryClick('Interesantes')}
           >
             ⭐ Interesantes
             <span className="folder-count">
-              {interesantesCounts.total > 0 && (
-                <>
-                  {interesantesCounts.unread > 0 && <span className="unread-badge">{interesantesCounts.unread}</span>}
-                  <span className="total-count">{interesantesCounts.total}</span>
-                </>
-              )}
+              {interesantesCounts.unread > 0 && <span className="unread-badge">{interesantesCounts.unread}</span>}
+              <span className="total-count">{interesantesCounts.total}</span>
             </span>
           </div>
           <div
@@ -319,12 +306,8 @@ function App() {
           >
             🚫 SPAM
             <span className="folder-count">
-              {spamCounts.total > 0 && (
-                <>
-                  {spamCounts.unread > 0 && <span className="unread-badge">{spamCounts.unread}</span>}
-                  <span className="total-count">{spamCounts.total}</span>
-                </>
-              )}
+              {spamCounts.unread > 0 && <span className="unread-badge">{spamCounts.unread}</span>}
+              <span className="total-count">{spamCounts.total}</span>
             </span>
           </div>
           <div
@@ -333,12 +316,8 @@ function App() {
           >
             📋 EnCopia
             <span className="folder-count">
-              {enCopiaCounts.total > 0 && (
-                <>
-                  {enCopiaCounts.unread > 0 && <span className="unread-badge">{enCopiaCounts.unread}</span>}
-                  <span className="total-count">{enCopiaCounts.total}</span>
-                </>
-              )}
+              {enCopiaCounts.unread > 0 && <span className="unread-badge">{enCopiaCounts.unread}</span>}
+              <span className="total-count">{enCopiaCounts.total}</span>
             </span>
           </div>
           <div
@@ -347,12 +326,8 @@ function App() {
           >
             🔔 Servicios
             <span className="folder-count">
-              {serviciosCounts.total > 0 && (
-                <>
-                  {serviciosCounts.unread > 0 && <span className="unread-badge">{serviciosCounts.unread}</span>}
-                  <span className="total-count">{serviciosCounts.total}</span>
-                </>
-              )}
+              {serviciosCounts.unread > 0 && <span className="unread-badge">{serviciosCounts.unread}</span>}
+              <span className="total-count">{serviciosCounts.total}</span>
             </span>
           </div>
         </div>
