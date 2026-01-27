@@ -16,12 +16,12 @@ export default function AccountManager({ onClose }: AccountManagerProps) {
     const { showSuccess, showError } = useToast()
 
     const [formData, setFormData] = useState<AccountCreate>({
-        email_address: '',
-        imap_host: '',
+        email_address: 'ivan@hawkins.es',
+        imap_host: 'imap.hawkins.es',
         imap_port: 993,
-        smtp_host: '',
+        smtp_host: 'smtp.hawkins.es',
         smtp_port: 587,
-        username: '',
+        username: 'ivan@hawkins.es',
         password: '',
     })
 

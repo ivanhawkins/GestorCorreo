@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
-import { useAccounts, useMessages, useStartSync, useBulkMarkAsRead } from './hooks/useApi'
+import { useAccounts, useMessages, useStartSync, useBulkMarkAsRead, useCategories, streamSync } from './hooks/useApi'
 import type { Message } from './services/api'
 import axios from 'axios'
 import AccountManager from './components/AccountManager'
@@ -11,10 +11,12 @@ import Settings from './components/Settings'
 import SearchBar from './components/SearchBar'
 import Toast from './components/Toast'
 import { useToast } from './hooks/useToast'
+import { useToggleStar, useUpdateClassification, useDeleteMessage } from './hooks/useApi'
 
-type CategoryFilter = 'all' | 'starred' | 'Interesantes' | 'SPAM' | 'EnCopia' | 'Servicios' | 'deleted'
+type CategoryFilter = 'all' | 'starred' | 'deleted' | string
 
 function App() {
+  console.log('App component rendering...');
   const [selectedAccount, setSelectedAccount] = useState<number | null>(null)
   const [showAccountManager, setShowAccountManager] = useState(false)
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
@@ -26,16 +28,30 @@ function App() {
   const [composerMode, setComposerMode] = useState<'new' | 'reply' | 'forward'>('new')
   const [composerOriginalMessage, setComposerOriginalMessage] = useState<Message | null>(null)
   const [searchFilters, setSearchFilters] = useState<any>({})
+  const [syncProgress, setSyncProgress] = useState<{
+    status: string;
+    message?: string;
+    current?: number;
+    total?: number;
+  } | null>(null)
 
   const { toasts, removeToast, showSuccess, showError, showInfo } = useToast()
 
   const { data: accounts, isLoading: accountsLoading } = useAccounts()
+  const { data: categories } = useCategories()
+
+  // Auto-select first account
+  useEffect(() => {
+    if (!selectedAccount && accounts && accounts.length > 0) {
+      setSelectedAccount(accounts[0].id)
+    }
+  }, [accounts, selectedAccount])
 
   // Query para mensajes filtrados (lo que se muestra en pantalla)
   const { data: messages, isLoading: messagesLoading, refetch: refetchMessages } = useMessages(
     selectedAccount ? {
       account_id: selectedAccount,
-      classification_label: (categoryFilter !== 'all' && categoryFilter !== 'starred' && categoryFilter !== 'deleted') ? categoryFilter : undefined,
+      classification_label: (categoryFilter === 'all') ? 'INBOX' : ((categoryFilter !== 'starred' && categoryFilter !== 'deleted') ? categoryFilter : undefined),
       is_starred: categoryFilter === 'starred' ? true : undefined,
       folder: categoryFilter === 'deleted' ? 'Deleted' : undefined,
       ...searchFilters
@@ -50,33 +66,83 @@ function App() {
   )
 
   const startSync = useStartSync()
+
   const bulkMarkAsRead = useBulkMarkAsRead()
+  const toggleStar = useToggleStar()
+  const updateClassification = useUpdateClassification()
+  const deleteMessage = useDeleteMessage()
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+  }
+
+  const handleDrop = async (e: React.DragEvent, target: 'inbox' | 'starred' | 'deleted' | 'category', value?: string) => {
+    e.preventDefault()
+    const messageId = e.dataTransfer.getData('text/plain')
+    if (!messageId) return
+
+    showInfo('Moving message...')
+
+    try {
+      if (target === 'inbox') {
+        // Clear classification
+        await updateClassification.mutateAsync({ messageId, label: null })
+        showSuccess('Message moved to Inbox')
+      } else if (target === 'starred') {
+        // Star the message
+        await toggleStar.mutateAsync({ messageId, isStarred: true })
+        showSuccess('Message starred')
+      } else if (target === 'deleted') {
+        // Delete message
+        await deleteMessage.mutateAsync(messageId)
+        showSuccess('Message moved to Deleted')
+      } else if (target === 'category' && value) {
+        // Update classification
+        await updateClassification.mutateAsync({ messageId, label: value })
+        showSuccess(`Moved to ${value}`)
+      }
+    } catch (error) {
+      showError('Failed to move message')
+    }
+  }
 
   const handleSync = async () => {
     if (!selectedAccount) return
 
-    showInfo('Synchronizing messages...')
+    setSyncProgress({ status: 'starting', message: 'Starting sync...' })
 
-    try {
-      const result = await startSync.mutateAsync({
+    await streamSync(
+      {
         account_id: selectedAccount,
         auto_classify: autoClassify
-      })
+      },
+      (progress) => {
+        setSyncProgress(progress)
 
-      const newCount = result.new_messages || 0
-      const classifiedCount = result.classified_count || 0
+        // Handle completion
+        if (progress.status === 'complete') {
+          const result = progress.sync_result
+          const newCount = result?.new_messages || 0
+          const classified = progress.classified_count || 0
 
-      if (autoClassify && classifiedCount > 0) {
-        showSuccess(`Synced ${newCount} messages and classified ${classifiedCount}`)
-      } else {
-        showSuccess(`Synced ${newCount} new messages`)
+          if (autoClassify && classified > 0) {
+            showSuccess(`Synced ${newCount} messages and classified ${classified}`)
+          } else {
+            showSuccess(`Synced ${newCount} new messages`)
+          }
+          setSyncProgress(null)
+          refetchMessages()
+        } else if (progress.status === 'error') {
+          showError(progress.error || 'Sync failed')
+          setSyncProgress(null)
+        }
+      },
+      (error) => {
+        console.error('Sync stream error:', error)
+        showError('Sync connection failed')
+        setSyncProgress(null)
       }
-
-      refetchMessages()
-    } catch (error: any) {
-      showError(error?.response?.data?.detail || 'Failed to sync messages')
-      console.error('Sync error:', error)
-    }
+    )
   }
 
   const handleMessageClick = (message: Message) => {
@@ -190,21 +256,17 @@ function App() {
     }
   }
 
+  // Counts are now calculated dynamically in the render loop
   const allCounts = getMessageCounts('all')
-  const interesantesCounts = getMessageCounts('Interesantes')
-  const spamCounts = getMessageCounts('SPAM')
-  const enCopiaCounts = getMessageCounts('EnCopia')
-  const serviciosCounts = getMessageCounts('Servicios')
 
   const getCategoryTitle = () => {
     switch (categoryFilter) {
       case 'all': return 'Inbox'
       case 'starred': return 'Starred'
-      case 'Interesantes': return 'Interesantes'
-      case 'SPAM': return 'SPAM'
-      case 'EnCopia': return 'En Copia'
-      case 'Servicios': return 'Servicios'
-      default: return 'Messages'
+      case 'deleted': return 'Trash'
+      default:
+        const cat = categories?.find((c: any) => c.key === categoryFilter)
+        return cat ? cat.name : categoryFilter
     }
   }
 
@@ -216,7 +278,7 @@ function App() {
     return (
       <div className="app">
         <header className="app-header">
-          <h1>📧 Mail Manager</h1>
+          <h1>📧 Hawkins Mail</h1>
           <p className="subtitle">No accounts configured</p>
         </header>
         <main className="app-main">
@@ -239,7 +301,7 @@ function App() {
     <div className="app mail-app">
       <aside className="sidebar">
         <div className="sidebar-header">
-          <h2>📧 Mail Manager</h2>
+          <h2>📧 Hawkins Mail</h2>
         </div>
 
         <div className="accounts-section">
@@ -274,6 +336,8 @@ function App() {
           <div
             className={`folder-item ${categoryFilter === 'all' ? 'active' : ''}`}
             onClick={() => handleCategoryClick('all')}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, 'inbox')}
           >
             📥 Inbox
             <span className="folder-count">
@@ -281,9 +345,12 @@ function App() {
               <span className="total-count">{allCounts.total}</span>
             </span>
           </div>
+
           <div
             className={`folder-item ${categoryFilter === 'starred' ? 'active' : ''}`}
             onClick={() => handleCategoryClick('starred')}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, 'starred')}
           >
             ⭐ Starred
             <span className="folder-count">
@@ -291,49 +358,31 @@ function App() {
             </span>
           </div>
 
-          <div
-            className={`folder-item ${categoryFilter === 'Interesantes' ? 'active' : ''}`}
-            onClick={() => handleCategoryClick('Interesantes')}
-          >
-            ⭐ Interesantes
-            <span className="folder-count">
-              {interesantesCounts.unread > 0 && <span className="unread-badge">{interesantesCounts.unread}</span>}
-              <span className="total-count">{interesantesCounts.total}</span>
-            </span>
-          </div>
-          <div
-            className={`folder-item ${categoryFilter === 'SPAM' ? 'active' : ''}`}
-            onClick={() => handleCategoryClick('SPAM')}
-          >
-            🚫 SPAM
-            <span className="folder-count">
-              {spamCounts.unread > 0 && <span className="unread-badge">{spamCounts.unread}</span>}
-              <span className="total-count">{spamCounts.total}</span>
-            </span>
-          </div>
-          <div
-            className={`folder-item ${categoryFilter === 'EnCopia' ? 'active' : ''}`}
-            onClick={() => handleCategoryClick('EnCopia')}
-          >
-            📋 EnCopia
-            <span className="folder-count">
-              {enCopiaCounts.unread > 0 && <span className="unread-badge">{enCopiaCounts.unread}</span>}
-              <span className="total-count">{enCopiaCounts.total}</span>
-            </span>
-          </div>
-          <div
-            className={`folder-item ${categoryFilter === 'Servicios' ? 'active' : ''}`}
-            onClick={() => handleCategoryClick('Servicios')}
-          >
-            🔔 Servicios
-            <span className="folder-count">
-              {serviciosCounts.unread > 0 && <span className="unread-badge">{serviciosCounts.unread}</span>}
-              <span className="total-count">{serviciosCounts.total}</span>
-            </span>
-          </div>
+          {/* Dynamic Categories */}
+          {categories?.map((category: any) => {
+            const counts = getMessageCounts(category.key as any)
+            return (
+              <div
+                key={category.id}
+                className={`folder-item ${categoryFilter === category.key ? 'active' : ''}`}
+                onClick={() => handleCategoryClick(category.key as any)}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, 'category', category.key)}
+              >
+                {category.icon || '📁'} {category.name}
+                <span className="folder-count">
+                  {counts.unread > 0 && <span className="unread-badge">{counts.unread}</span>}
+                  <span className="total-count">{counts.total}</span>
+                </span>
+              </div>
+            )
+          })}
+
           <div
             className={`folder-item ${categoryFilter === 'deleted' ? 'active' : ''}`}
             onClick={() => handleCategoryClick('deleted')}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, 'deleted')}
           >
             🗑️ Mensajes eliminados
             <span className="folder-count">
@@ -341,7 +390,7 @@ function App() {
             </span>
           </div>
         </div>
-      </aside>
+      </aside >
 
       <main className="main-content">
         <div className="toolbar">
@@ -381,9 +430,15 @@ function App() {
             <button
               className="btn-primary"
               onClick={handleSync}
-              disabled={!selectedAccount || startSync.isPending}
+              disabled={!selectedAccount || (syncProgress !== null)}
             >
-              {startSync.isPending ? '⏳ Syncing...' : '🔄 Sync'}
+              {syncProgress ? (
+                syncProgress.total ? (
+                  `Downloading ${syncProgress.current || 0}/${syncProgress.total}`
+                ) : (
+                  syncProgress.message || 'Syncing...'
+                )
+              ) : '🔄 Sync'}
             </button>
           </div>
         </div>
@@ -407,30 +462,38 @@ function App() {
         )}
       </main>
 
-      {showAccountManager && (
-        <AccountManager onClose={() => setShowAccountManager(false)} />
-      )}
+      {
+        showAccountManager && (
+          <AccountManager onClose={() => setShowAccountManager(false)} />
+        )
+      }
 
-      {selectedMessage && (
-        <MessageViewer
-          message={selectedMessage}
-          onClose={() => setSelectedMessage(null)}
-          onReply={handleReply}
-          onForward={handleForward}
-        />
-      )}
+      {
+        selectedMessage && (
+          <MessageViewer
+            message={selectedMessage}
+            onClose={() => setSelectedMessage(null)}
+            onReply={handleReply}
+            onForward={handleForward}
+          />
+        )
+      }
 
-      {showComposer && (
-        <Composer
-          onClose={() => setShowComposer(false)}
-          mode={composerMode}
-          originalMessage={composerOriginalMessage || undefined}
-        />
-      )}
+      {
+        showComposer && (
+          <Composer
+            onClose={() => setShowComposer(false)}
+            mode={composerMode}
+            originalMessage={composerOriginalMessage || undefined}
+          />
+        )
+      }
 
-      {showSettings && (
-        <Settings onClose={() => setShowSettings(false)} />
-      )}
+      {
+        showSettings && (
+          <Settings onClose={() => setShowSettings(false)} />
+        )
+      }
 
       {/* Toast notifications */}
       <div className="toast-container">
@@ -444,7 +507,7 @@ function App() {
           />
         ))}
       </div>
-    </div>
+    </div >
   )
 }
 

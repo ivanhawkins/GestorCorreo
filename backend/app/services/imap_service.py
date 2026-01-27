@@ -415,18 +415,19 @@ async def sync_account_messages(
     password: str,
     db: AsyncSession,
     folder: str = "INBOX"
-) -> Dict:
+):
     """
-    Synchronize messages from an account.
+    Synchronize messages from an account with progress yielding.
     
-    Returns:
-        Dict with sync statistics
+    Yields:
+        Dict with sync status and progress
     """
     imap = IMAPService(account, password)
     
     try:
         # Connect to IMAP
         logger.info(f"Starting sync for account {account.email_address}")
+        yield {'status': 'connecting', 'message': f'Connecting to {account.imap_host}...'}
         
         try:
             if not imap.connect():
@@ -437,10 +438,11 @@ async def sync_account_messages(
                 account.last_sync_error = error_msg
                 await db.commit()
                 
-                return {
+                yield {
                     'status': 'error',
                     'error': error_msg
                 }
+                return
         except (IMAPConnectionError, IMAPAuthenticationError) as e:
             error_msg = str(e)
             logger.error(f"Sync failed for {account.email_address}: {error_msg}")
@@ -449,12 +451,14 @@ async def sync_account_messages(
             account.last_sync_error = error_msg
             await db.commit()
             
-            return {
+            yield {
                 'status': 'error',
                 'error': error_msg
             }
+            return
         
         # Select folder
+        yield {'status': 'selecting_folder', 'message': f'Selecting {folder}...'}
         if not imap.select_folder(folder):
             error_msg = f'Failed to select folder {folder}'
             logger.error(error_msg)
@@ -462,12 +466,14 @@ async def sync_account_messages(
             account.last_sync_error = error_msg
             await db.commit()
             
-            return {
+            yield {
                 'status': 'error',
                 'error': error_msg
             }
+            return
         
         # Get last synced UID for this account
+        yield {'status': 'checking_new', 'message': 'Checking for new messages...'}
         result = await db.execute(
             select(Message)
             .where(Message.account_id == account.id)
@@ -489,17 +495,32 @@ async def sync_account_messages(
             account.last_sync_error = None
             await db.commit()
             
-            return {
+            yield {
                 'status': 'success',
                 'new_messages': 0,
                 'total_messages': 0
             }
+            return
         
-        logger.info(f"Found {len(new_uids)} new messages for {account.email_address}")
+        total_messages = len(new_uids)
+        logger.info(f"Found {total_messages} new messages for {account.email_address}")
+        yield {
+            'status': 'found_messages', 
+            'total': total_messages, 
+            'message': f'Found {total_messages} new messages'
+        }
         
         # Fetch and save new messages
         saved_count = 0
-        for uid in new_uids:
+        for index, uid in enumerate(new_uids):
+            # Yield progress every message (or every N messages if too fast, but 1 by 1 is good for feedback)
+            yield {
+                'status': 'downloading',
+                'current': index + 1,
+                'total': total_messages,
+                'message': f'Downloading message {index + 1} of {total_messages}...'
+            }
+
             headers = imap.fetch_message_headers(uid)
             if not headers:
                 logger.warning(f"Skipping UID {uid} - failed to fetch headers")
@@ -533,6 +554,10 @@ async def sync_account_messages(
             
             db.add(message)
             saved_count += 1
+            
+            # Commit periodically to avoid huge transactions
+            if saved_count % 10 == 0:
+                await db.commit()
         
         await db.commit()
         
@@ -542,10 +567,10 @@ async def sync_account_messages(
         
         logger.info(f"Sync completed for {account.email_address}: {saved_count} messages saved")
         
-        return {
+        yield {
             'status': 'success',
             'new_messages': saved_count,
-            'total_messages': len(new_uids)
+            'total_messages': total_messages
         }
     
     except Exception as e:
@@ -557,7 +582,7 @@ async def sync_account_messages(
         account.last_sync_error = error_msg
         await db.commit()
         
-        return {
+        yield {
             'status': 'error',
             'error': error_msg
         }

@@ -121,7 +121,8 @@ def apply_priority_rules(
 
 async def classify_with_rules_and_ai(
     message_data: Dict,
-    whitelist_domains: List[str]
+    whitelist_domains: List[str],
+    categories: List[Dict] = []
 ) -> Dict:
     """
     Complete classification with rules + AI.
@@ -129,6 +130,7 @@ async def classify_with_rules_and_ai(
     Args:
         message_data: Message data
         whitelist_domains: Whitelist domains
+        categories: List of available categories
     
     Returns:
         Classification result
@@ -142,4 +144,4 @@ async def classify_with_rules_and_ai(
         return rule_result
     
     # No rule matched, use AI
-    return await classify_message(message_data)
+    return await classify_message(message_data, categories)

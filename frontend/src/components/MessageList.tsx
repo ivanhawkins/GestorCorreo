@@ -2,7 +2,7 @@
  * MessageList component - displays list of email messages
  */
 import { useState } from 'react'
-import { useClassifyMessage, useToggleStar, useMoveToFolder } from '../hooks/useApi'
+import { useClassifyMessage, useToggleStar } from '../hooks/useApi'
 import { useToast } from '../hooks/useToast'
 import type { Message } from '../services/api'
 import './MessageList.css'
@@ -16,7 +16,6 @@ export default function MessageList({ messages, onMessageClick }: MessageListPro
     const [classifyingId, setClassifyingId] = useState<string | null>(null)
     const classifyMessage = useClassifyMessage()
     const toggleStar = useToggleStar()
-    const moveToFolder = useMoveToFolder()
     const { showSuccess, showError } = useToast()
 
     if (messages.length === 0) {
@@ -88,15 +87,7 @@ export default function MessageList({ messages, onMessageClick }: MessageListPro
         }
     }
 
-    const handleArchive = async (e: React.MouseEvent, messageId: string) => {
-        e.stopPropagation()
-        try {
-            await moveToFolder.mutateAsync({ messageId, folder: 'Archive' })
-            showSuccess('Message archived')
-        } catch (error: any) {
-            showError('Failed to archive message')
-        }
-    }
+
 
     return (
         <div className="message-list">
@@ -105,6 +96,11 @@ export default function MessageList({ messages, onMessageClick }: MessageListPro
                     key={message.id}
                     className={`message-item ${message.is_read ? 'read' : 'unread'}`}
                     onClick={() => onMessageClick?.(message)}
+                    draggable
+                    onDragStart={(e) => {
+                        e.dataTransfer.setData('text/plain', message.id)
+                        e.dataTransfer.effectAllowed = 'move'
+                    }}
                 >
                     <div className="message-from">
                         {message.from_name || message.from_email}

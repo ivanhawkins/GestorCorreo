@@ -103,6 +103,7 @@ async def update_account(
     
     # Update fields
     update_data = account_data.model_dump(exclude_unset=True)
+    print(f"DEBUG: Received update for {account_id}: {update_data}")
     
     # Encrypt password if provided
     if 'password' in update_data:

@@ -48,9 +48,26 @@ async def list_messages(
     # Apply filters
     if account_id:
         query = query.where(Message.account_id == account_id)
+
+    # Handle 'Deleted' folder or exclusion
+    if folder == 'Deleted':
+        query = query.where(Classification.final_label == 'Deleted')
+    else:
+        # Default behavior: Exclude 'Deleted' messages from other views
+        # Includes messages with NO classification OR classification != 'Deleted'
+        query = query.where(
+            or_(
+                Classification.final_label != 'Deleted',
+                Classification.final_label.is_(None)
+            )
+        )
     
     if classification_label:
-        query = query.where(Classification.final_label == classification_label)
+        if classification_label == 'INBOX':
+            # Unclassified messages (and implicitly not Deleted due to above check)
+            query = query.where(Classification.final_label.is_(None))
+        else:
+            query = query.where(Classification.final_label == classification_label)
     
     if search:
         search_pattern = f"%{search}%"
@@ -279,10 +296,11 @@ async def delete_message(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Move message to Deleted folder.
+    Move message to Deleted folder (by setting label='Deleted').
     
     - **message_id**: Message ID
     """
+    # Check if message exists
     result = await db.execute(
         select(Message).where(Message.id == message_id)
     )
@@ -294,16 +312,61 @@ async def delete_message(
             detail="Message not found"
         )
     
-    message.folder = "Deleted"
-    
-    # Also remove classification so it doesn't appear in original category
-    classification_result = await db.execute(
+    # Update classification to 'Deleted'
+    # Check if classification exists
+    cls_result = await db.execute(
         select(Classification).where(Classification.message_id == message_id)
     )
-    classification = classification_result.scalar_one_or_none()
+    classification = cls_result.scalar_one_or_none()
+    
     if classification:
-        await db.delete(classification)
+        classification.final_label = 'Deleted'
+        classification.decided_by = 'user_delete'
+    else:
+        new_classification = Classification(
+            message_id=message_id,
+            final_label='Deleted',
+            decided_by='user_delete'
+        )
+        db.add(new_classification)
     
     await db.commit()
     
     return None
+
+
+@router.put("/{message_id}/classification")
+async def update_classification(
+    message_id: str,
+    label: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update details manually.
+    - **label**: New classification label (or None to clear)
+    """
+    # Find existing classification
+    result = await db.execute(
+        select(Classification).where(Classification.message_id == message_id)
+    )
+    classification = result.scalar_one_or_none()
+
+    if not label:
+        # If label is None, remove classification
+        if classification:
+            await db.delete(classification)
+    else:
+        # Update or create
+        if classification:
+            classification.final_label = label
+            classification.decided_by = "manual_user"
+        else:
+            new_classification = Classification(
+                message_id=message_id,
+                final_label=label,
+                decided_by="manual_user"
+            )
+            db.add(new_classification)
+
+    await db.commit()
+    return {"message_id": message_id, "classification_label": label}

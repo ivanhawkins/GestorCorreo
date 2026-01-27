@@ -3,8 +3,8 @@
  */
 import { useState, useEffect } from 'react'
 import DOMPurify from 'dompurify'
-import type { Message, MessageBody, Attachment } from '../services/apiExtended'
-import { getMessageBody, getMessageAttachments, getAttachmentDownloadUrl } from '../services/apiExtended'
+import type { Message, MessageBody, Attachment, MessageDetail } from '../services/apiExtended'
+import { getMessageBody, getMessageAttachments, getAttachmentDownloadUrl, getMessage } from '../services/apiExtended'
 import { useMarkAsRead, useDeleteMessage } from '../hooks/useApi'
 import { useToast } from '../hooks/useToast'
 import './MessageViewer.css'
@@ -21,6 +21,7 @@ export default function MessageViewer({ message, onClose, onReply, onForward }: 
     const [attachments, setAttachments] = useState<Attachment[]>([])
     const [loading, setLoading] = useState(true)
     const [showHtml, setShowHtml] = useState(true)
+    const [messageDetails, setMessageDetails] = useState<MessageDetail | null>(null)
 
     const markAsRead = useMarkAsRead()
     const deleteMessage = useDeleteMessage()
@@ -37,12 +38,14 @@ export default function MessageViewer({ message, onClose, onReply, onForward }: 
     const loadMessageContent = async () => {
         setLoading(true)
         try {
-            const [bodyData, attachmentsData] = await Promise.all([
+            const [bodyData, attachmentsData, detailsData] = await Promise.all([
                 getMessageBody(message.id),
-                getMessageAttachments(message.id)
+                getMessageAttachments(message.id),
+                getMessage(message.id)
             ])
             setBody(bodyData)
             setAttachments(attachmentsData)
+            setMessageDetails(detailsData)
         } catch (error) {
             console.error('Error loading message content:', error)
         } finally {
@@ -99,10 +102,7 @@ export default function MessageViewer({ message, onClose, onReply, onForward }: 
         }
     }
 
-    const downloadAttachment = (attachment: Attachment) => {
-        const url = getAttachmentDownloadUrl(message.id, attachment.id)
-        window.open(url, '_blank')
-    }
+
 
     return (
         <div className="message-viewer-overlay" onClick={onClose}>
@@ -112,8 +112,20 @@ export default function MessageViewer({ message, onClose, onReply, onForward }: 
                         <h2>{message.subject || '(Sin asunto)'}</h2>
                         <div className="message-meta-info">
                             <div className="from-info">
-                                <strong>De:</strong> {message.from_name || message.from_email}
+                                <strong>De:</strong> {message.from_name} &lt;{message.from_email}&gt;
                             </div>
+                            {messageDetails && (
+                                <div className="to-info">
+                                    <strong>Para:</strong> {(() => {
+                                        try {
+                                            const tos = JSON.parse(messageDetails.to_addresses || '[]');
+                                            return Array.isArray(tos) ? tos.join(', ') : messageDetails.to_addresses;
+                                        } catch (e) {
+                                            return messageDetails.to_addresses;
+                                        }
+                                    })()}
+                                </div>
+                            )}
                             <div className="date-info">
                                 <strong>Fecha:</strong> {formatDate(message.date)}
                             </div>

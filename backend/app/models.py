@@ -21,6 +21,7 @@ class Account(Base):
     is_active = Column(Boolean, default=True)
     ssl_verify = Column(Boolean, default=True)  # Verify SSL certificates
     connection_timeout = Column(Integer, default=30)  # Connection timeout in seconds
+    owner_profile = Column(Text, nullable=True)  # AI Persona/Profile for this account
     last_sync_error = Column(Text, nullable=True)  # Last sync error message
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -114,3 +115,17 @@ class AuditLog(Base):
     payload = Column(Text)  # JSON
     status = Column(String)  # 'success' | 'error'
     error_message = Column(Text)
+
+
+class Category(Base):
+    """Email classification category."""
+    __tablename__ = "categories"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key = Column(String, unique=True, nullable=False)  # e.g., "Interesantes"
+    name = Column(String, nullable=False)  # Display name
+    description = Column(String)
+    ai_instruction = Column(Text, nullable=False)  # Rule for AI
+    icon = Column(String)  # Emoji
+    is_system = Column(Boolean, default=False)  # If true, cannot be deleted
+    created_at = Column(DateTime, server_default=func.now())

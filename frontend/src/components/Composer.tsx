@@ -24,7 +24,7 @@ interface ComposerProps {
 
 export default function Composer({ onClose, mode = 'new', originalMessage }: ComposerProps) {
     const { data: accounts } = useAccounts()
-    const { showSuccess, showError } = useToast()
+    const { showSuccess, showError, showInfo } = useToast()
 
     const [accountId, setAccountId] = useState<number>(accounts?.[0]?.id || 0)
     const [to, setTo] = useState('')
@@ -81,6 +81,41 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
 
     const removeAttachment = (index: number) => {
         setAttachments(prev => prev.filter((_, i) => i !== index))
+    }
+
+    const [generating, setGenerating] = useState(false)
+
+    const handleGenerateAI = async () => {
+        if (!originalMessage) return
+
+        setGenerating(true)
+        showInfo('Generating AI response...')
+
+        try {
+            // Find current account to get the profile
+            const currentAccount = accounts?.find(a => a.id === accountId);
+            const ownerProfile = currentAccount?.owner_profile || "Eres un asistente profesional y educado.";
+
+            const response = await axios.post('http://localhost:8000/api/ai/generate_reply', {
+                original_from_name: originalMessage.from_name,
+                original_from_email: originalMessage.from_email,
+                original_subject: originalMessage.subject,
+                original_body: originalMessage.snippet || "No content",
+                user_instruction: "Genera una respuesta profesional.",
+                owner_profile: ownerProfile
+            })
+
+            if (response.data.reply_body) {
+                // Append to current body
+                setBody(prev => prev + '\n' + response.data.reply_body)
+                showSuccess('AI Reply Generated!')
+            }
+        } catch (error) {
+            console.error(error)
+            showError('Failed to generate AI reply')
+        } finally {
+            setGenerating(false)
+        }
     }
 
     const handleSend = async (e: React.FormEvent) => {
@@ -229,6 +264,20 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
                     </div>
 
                     <div className="composer-actions">
+                        {/* AI Generator Button */}
+                        {(mode === 'reply' && originalMessage) && (
+                            <button
+                                type="button"
+                                onClick={handleGenerateAI}
+                                className="btn-ai-generate"
+                                disabled={generating}
+                                title="Generate with AI"
+                                style={{ marginRight: 'auto' }}
+                            >
+                                {generating ? '🎲 Generating...' : '🎲 AI Reply'}
+                            </button>
+                        )}
+
                         <button type="button" onClick={onClose} className="btn-secondary">
                             Cancel
                         </button>

@@ -3,7 +3,7 @@ AI classification service using Ollama.
 """
 import httpx
 import json
-from typing import Dict, Optional, Literal
+from typing import Dict, Optional, Literal, List
 from datetime import datetime
 
 OLLAMA_BASE_URL = "http://localhost:11434"
@@ -130,21 +130,55 @@ class OllamaClient:
             return False
 
 
+# Helper to build prompt
+def build_classification_prompt(categories: List[Dict]) -> str:
+    """
+    Build the classification prompt dynamically based on available categories.
+    """
+    context_part = """
+Eres un asistente de clasificación de correos electrónicos para la empresa Hawkins (@hawkins.es).
+
+**Contexto del correo:**
+- De: {from_name} <{from_email}>
+- Para: {to_addresses}
+- CC: {cc_addresses}
+- Asunto: {subject}
+- Fecha: {date}
+- Cuerpo (primeras 500 palabras): {body_preview}
+"""
+
+    categories_text = "**Categorías disponibles:**\n\n"
+    labels_list = []
+    
+    for idx, cat in enumerate(categories, 1):
+        labels_list.append(cat['key'])
+        categories_text += f"{idx}. **{cat['key']}**: {cat['ai_instruction']}\n\n"
+
+    labels_joined = "|".join(labels_list)
+    
+    instructions_part = f"""
+**IMPORTANTE:**
+- Clasifica el correo en ÚNICAMENTE una de las categorías anteriores.
+- Responde SOLO con JSON válido, sin texto adicional.
+
+**Formato de respuesta (JSON estricto):**
+{{
+  "label": "{labels_joined}",
+  "confidence": 0.85,
+  "rationale": "Máximo 2 frases explicando la decisión"
+}}
+"""
+    return context_part + categories_text + instructions_part
+
+
 async def classify_with_model(
     message_data: Dict,
     model: str,
+    categories: List[Dict],
     ollama_client: Optional[OllamaClient] = None
 ) -> Dict:
     """
     Classify message with a specific model.
-    
-    Args:
-        message_data: Dict with message fields
-        model: Model name (GPT or Qwen)
-        ollama_client: Optional OllamaClient instance
-    
-    Returns:
-        Dict with label, confidence, rationale
     """
     if ollama_client is None:
         ollama_client = OllamaClient()
@@ -152,7 +186,9 @@ async def classify_with_model(
     # Prepare prompt
     body_preview = (message_data.get("body_text") or message_data.get("snippet") or "")[:500]
     
-    prompt = CLASSIFICATION_PROMPT.format(
+    dynamic_prompt_template = build_classification_prompt(categories)
+    
+    prompt = dynamic_prompt_template.format(
         from_name=message_data.get("from_name", ""),
         from_email=message_data.get("from_email", ""),
         to_addresses=message_data.get("to_addresses", ""),
@@ -244,12 +280,13 @@ async def review_with_gpt(
         }
 
 
-async def classify_message(message_data: Dict) -> Dict:
+async def classify_message(message_data: Dict, categories: List[Dict]) -> Dict:
     """
     Full classification pipeline with consensus/tiebreaker.
     
     Args:
         message_data: Dict with message fields
+        categories: List of category dicts (key, ai_instruction)
     
     Returns:
         Dict with complete classification result
@@ -264,8 +301,8 @@ async def classify_message(message_data: Dict) -> Dict:
         }
     
     # Step 1: Classify with both models
-    gpt_result = await classify_with_model(message_data, GPT_MODEL, ollama_client)
-    qwen_result = await classify_with_model(message_data, QWEN_MODEL, ollama_client)
+    gpt_result = await classify_with_model(message_data, GPT_MODEL, categories, ollama_client)
+    qwen_result = await classify_with_model(message_data, QWEN_MODEL, categories, ollama_client)
     
     # Step 2: Check for consensus
     if gpt_result["label"] == qwen_result["label"]:
@@ -298,4 +335,90 @@ async def classify_message(message_data: Dict) -> Dict:
             "final_label": review_result["final_label"],
             "final_reason": review_result["final_reason"],
             "decided_by": "gpt_review"
+        }
+
+REPLY_PROMPT = """
+Eres un asistente de redacción de correos electrónicos.
+Tu trabajo es redactar una respuesta profesional y cortés a un correo recibido.
+
+**Perfil del Propietario (QUIEN ERES TU):**
+{owner_profile}
+
+**Correo Original recibido:**
+- De: {from_name} <{from_email}>
+- Asunto: {subject}
+- Cuerpo: {body_text}
+
+**Instrucción del usuario (si la hay):**
+{user_instruction}
+
+**Tu Tarea:**
+Redacta ÚNICAMENTE el cuerpo del correo de respuesta. No incluyas "Asunto:" ni saludos/despedidas genéricos si ya están en la firma (aunque un "Hola [Nombre]," al inicio está bien).
+Sigue estrictamente el tono y estilo definidos en el perfil del propietario.
+"""
+
+async def generate_reply(
+    message_data: Dict,
+    user_instruction: str = "",
+    owner_profile: str = "Eres profesional y eficiente.",
+    ollama_client: Optional[OllamaClient] = None
+) -> Dict:
+    """
+    Generate a reply for a message.
+    """
+    if ollama_client is None:
+        ollama_client = OllamaClient()
+
+    prompt = REPLY_PROMPT.format(
+        from_name=message_data.get("from_name", ""),
+        from_email=message_data.get("from_email", ""),
+        subject=message_data.get("subject", ""),
+        body_text=(message_data.get("body_text") or "")[:1000],
+        user_instruction=user_instruction or "Responde adecuadamente al contexto.",
+        owner_profile=owner_profile
+    )
+
+    try:
+        # Use GPT model for better writing
+        response = await ollama_client.generate(GPT_MODEL, prompt, format="json") # Should be text, but let's check format
+        # Actually for generation we usually want plain text, or we can ask for specific JSON structure.
+        # Let's ask for plain text for the body to be simple.
+        
+        # Re-call with text format
+        response = await ollama_client.generate(GPT_MODEL, prompt, format="json") 
+        # Wait, the prompt implies "Redacta ÚNICAMENTE el cuerpo". 
+        # But my client 'generate' method defaults to JSON if format not specified? 
+        # Let's check the client generate method.
+        # It takes format arg.
+        
+        # Let's use format="json" and ask for {"reply_body": "..."} to be safe/structured? 
+        # Or just text. Text is easier for "body only". 
+        # But current client implementation might force "json" param if I didn't change it.
+        # Line 91: format: str = "json".
+        
+        # Let's update the PROMPT to ask for JSON to safely extract the body.
+        pass
+    except Exception as e:
+        return {"error": str(e)}
+        
+    # Re-doing the function properly with JSON for safety
+    
+    json_prompt = prompt + """
+    
+    **Formato de respuesta (JSON):**
+    {
+        "reply_body": "El texto del correo aquí..."
+    }
+    """
+    
+    try:
+        response = await ollama_client.generate(GPT_MODEL, json_prompt, format="json")
+        result_text = response.get("response", "{}")
+        result_json = json.loads(result_text)
+        return {
+            "reply_body": result_json.get("reply_body", "")
+        }
+    except Exception as e:
+         return {
+            "reply_body": f"Error generando respuesta: {str(e)}"
         }

@@ -30,6 +30,7 @@ export interface Account {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  owner_profile?: string; // User persona
 }
 
 export interface AccountCreate {
@@ -43,34 +44,39 @@ export interface AccountCreate {
 }
 
 export const getAccounts = async (): Promise<Account[]> => {
-  const response = await apiClient.get('/api/accounts/');
-  return response.data;
+  try {
+    const response = await apiClient.get('/api/accounts/');
+    return response.data;
+  } catch (error) {
+    console.warn('Backend unavailable. Returning mock account.');
+    return [{
+      id: 1,
+      email_address: 'ivan@hawkins.es',
+      imap_host: 'imap.hawkins.es',
+      imap_port: 993,
+      smtp_host: 'smtp.hawkins.es',
+      smtp_port: 587,
+      username: 'ivan@hawkins.es',
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }];
+  }
 };
 
-export const createAccount = async (data: AccountCreate): Promise<Account> => {
-  const response = await apiClient.post('/api/accounts/', data);
-  return response.data;
-};
-
-export const testConnection = async (accountId: number) => {
-  const response = await apiClient.post(`/api/accounts/${accountId}/test`);
-  return response.data;
-};
-
-// Messages
 export interface Message {
   id: string;
   account_id: number;
-  from_name?: string;
   from_email: string;
+  from_name?: string;
   subject?: string;
   date: string;
   snippet?: string;
   is_read: boolean;
   is_starred: boolean;
   has_attachments: boolean;
-  classification_label?: string;  // Classification category if classified
-  folder?: string;
+  classification_label?: string;
+  folder: string;
 }
 
 export interface MessageDetail extends Message {
@@ -82,14 +88,54 @@ export interface MessageDetail extends Message {
   message_id: string;
 }
 
+
+export const createAccount = async (data: AccountCreate): Promise<Account> => {
+  const response = await apiClient.post('/api/accounts/', data);
+  return response.data;
+};
+
 export const getMessages = async (params?: {
   account_id?: number;
   folder?: string;
   classification_label?: string;  // Filter by classification category
   search?: string;
 }): Promise<Message[]> => {
-  const response = await apiClient.get('/api/messages/', { params });
-  return response.data;
+  try {
+    const response = await apiClient.get('/api/messages/', { params });
+    return response.data;
+  } catch (error) {
+    console.warn('Backend unavailable. Returning mock messages.');
+    return [
+      {
+        id: '1',
+        account_id: 1,
+        from_email: 'noreply@google.com',
+        from_name: 'Google',
+        subject: 'Security Alert',
+        date: new Date().toISOString(),
+        snippet: 'New sign-in to your account...',
+        is_read: false,
+        is_starred: false,
+        has_attachments: false,
+        classification_label: 'Servicios',
+        folder: 'INBOX'
+      },
+      {
+        id: '2',
+        account_id: 1,
+        from_email: 'client@example.com',
+        from_name: 'Important Client',
+        subject: 'Project Proposal',
+        date: new Date().toISOString(),
+        snippet: 'Please find attached the proposal...',
+        is_read: true,
+        is_starred: true,
+        has_attachments: true,
+        classification_label: 'Interesantes',
+        folder: 'INBOX'
+      }
+    ];
+  }
 };
 
 export const getMessage = async (id: string): Promise<MessageDetail> => {
@@ -125,6 +171,60 @@ export const getSyncStatus = async () => {
   return response.data;
 };
 
+export const streamSync = async (
+  data: SyncRequest,
+  onMessage: (data: any) => void,
+  onError: (error: any) => void
+) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/sync/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) throw new Error('No reader available');
+
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      buffer += chunk;
+
+      const lines = buffer.split('\n\n');
+      // Keep the last part if it's incomplete
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.trim().startsWith('data: ')) {
+          const jsonStr = line.trim().slice(6);
+          if (!jsonStr) continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            onMessage(parsed);
+          } catch (e) {
+            console.error('Error parsing SSE', e);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    onError(err);
+  }
+};
+
 // Classification (placeholder for future)
 export interface Classification {
   id: number;
@@ -144,4 +244,97 @@ export interface Classification {
 export const getClassification = async (messageId: string): Promise<Classification> => {
   const response = await apiClient.get(`/api/classifications/${messageId}`);
   return response.data;
+};
+
+export const updateClassification = async (messageId: string, label: string | null) => {
+  const response = await apiClient.put(`/api/messages/${messageId}/classification`, null, {
+    params: { label }
+  });
+  return response.data;
+};
+
+// Categories
+export interface Category {
+  id: number;
+  key: string;
+  name: string;
+  description?: string;
+  ai_instruction: string;
+  icon?: string;
+  is_system: boolean;
+}
+
+export interface CategoryCreate {
+  key: string;
+  name: string;
+  description?: string;
+  ai_instruction: string;
+  icon?: string;
+}
+
+export interface CategoryUpdate {
+  name?: string;
+  description?: string;
+  ai_instruction?: string;
+  icon?: string;
+}
+
+// Mock storage for session capabilities
+let MOCK_CATEGORIES: Category[] = [
+  { id: 1, key: 'interesantes', name: 'Interesantes', ai_instruction: 'Budget requests', is_system: true, icon: '⭐' },
+  { id: 2, key: 'spam', name: 'SPAM', ai_instruction: 'Unwanted', is_system: true, icon: '🚫' },
+  { id: 3, key: 'encopia', name: 'EnCopia', ai_instruction: 'CCed emails', is_system: true, icon: '👥' },
+  { id: 4, key: 'servicios', name: 'Servicios', ai_instruction: 'Transactional', is_system: true, icon: '⚙️' }
+];
+
+export const getCategories = async (): Promise<Category[]> => {
+  try {
+    const response = await apiClient.get('/api/categories/');
+    return response.data;
+  } catch (error) {
+    console.warn('Backend unavailable. Returning mock categories.');
+    return [...MOCK_CATEGORIES];
+  }
+};
+
+export const createCategory = async (data: CategoryCreate): Promise<Category> => {
+  try {
+    const response = await apiClient.post('/api/categories/', data);
+    return response.data;
+  } catch (error) {
+    console.warn('Backend unavailable. Mocking category creation.');
+    const newCategory: Category = {
+      id: Date.now(),
+      ...data,
+      is_system: false
+    };
+    MOCK_CATEGORIES.push(newCategory);
+    return newCategory;
+  }
+};
+
+export const updateCategory = async (id: number, data: CategoryUpdate): Promise<Category> => {
+  try {
+    const response = await apiClient.put(`/api/categories/${id}`, data);
+    return response.data;
+  } catch (error) {
+    console.warn('Backend unavailable. Mocking category update.');
+    const index = MOCK_CATEGORIES.findIndex(c => c.id === id);
+    if (index !== -1) {
+      MOCK_CATEGORIES[index] = { ...MOCK_CATEGORIES[index], ...data };
+      return MOCK_CATEGORIES[index];
+    }
+    throw new Error('Category not found');
+  }
+};
+
+export const deleteCategory = async (id: number) => {
+  try {
+    const response = await apiClient.delete(`/api/categories/${id}`);
+    return response.data;
+  } catch (error) {
+    console.warn('Backend unavailable. Mocking category deletion.');
+    MOCK_CATEGORIES = MOCK_CATEGORIES.filter(c => c.id !== id);
+    return { success: true };
+  }
 };

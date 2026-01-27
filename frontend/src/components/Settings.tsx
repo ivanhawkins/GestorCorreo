@@ -2,13 +2,53 @@
  * Settings component - manage accounts and test connections
  */
 import { useState } from 'react'
-import { useAccounts } from '../hooks/useApi'
+import { useAccounts, useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useApi'
 import { useToast } from '../hooks/useToast'
 import axios from 'axios'
 import './Settings.css'
 
 interface SettingsProps {
     onClose: () => void
+}
+
+function ProfileEditor({ account, onSave }: { account: any, onSave: () => void }) {
+    const [profile, setProfile] = useState(account.owner_profile || '')
+    const [saving, setSaving] = useState(false)
+    const { showSuccess, showError } = useToast()
+
+    const handleSave = async () => {
+        setSaving(true)
+        try {
+            await axios.put(`http://localhost:8000/api/accounts/${account.id}`, { owner_profile: profile })
+            showSuccess('Profile updated')
+            onSave()
+        } catch (err) {
+            showError('Failed to update profile')
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    return (
+        <div className="profile-editor" style={{ marginTop: '5px', width: '100%' }}>
+            <textarea
+                cols={40}
+                rows={3}
+                value={profile}
+                onChange={(e) => setProfile(e.target.value)}
+                placeholder="Example: I am Ivan, CEO of Hawkins. I am direct but polite..."
+                style={{ width: '100%', padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
+            />
+            <button
+                className="btn-save-profile"
+                style={{ marginTop: '5px', padding: '4px 8px', cursor: 'pointer' }}
+                onClick={handleSave}
+                disabled={saving}
+            >
+                {saving ? '💾 Saving...' : '💾 Save Profile'}
+            </button>
+        </div>
+    )
 }
 
 export default function Settings({ onClose }: SettingsProps) {
@@ -73,12 +113,8 @@ export default function Settings({ onClose }: SettingsProps) {
                                                     <span>{account.imap_host}:{account.imap_port}</span>
                                                 </div>
                                                 <div className="detail-row">
-                                                    <span className="label">SMTP:</span>
-                                                    <span>{account.smtp_host}:{account.smtp_port}</span>
-                                                </div>
-                                                <div className="detail-row">
-                                                    <span className="label">Username:</span>
-                                                    <span>{account.username}</span>
+                                                    <span className="label">Owner Profile (AI Persona):</span>
+                                                    <ProfileEditor account={account} onSave={refetch} />
                                                 </div>
                                             </div>
                                         </div>
@@ -109,74 +145,153 @@ export default function Settings({ onClose }: SettingsProps) {
 
                         <div className="ai-config">
                             <div className="config-group">
-                                <label className="config-label">Email Categories</label>
+                                <label className="config-label">Email Categories & Instructions</label>
                                 <p className="config-description">
-                                    Define the categories used for email classification. Each category should have a clear purpose.
+                                    Define the categories used for email classification and their AI rules.
                                 </p>
-                                <div className="categories-list">
-                                    <div className="category-item">
-                                        <span className="category-icon">⭐</span>
-                                        <div className="category-info">
-                                            <strong>Interesantes</strong>
-                                            <p>Emails with real intent to hire Hawkins services (quotes, proposals, business meetings)</p>
-                                        </div>
-                                    </div>
-                                    <div className="category-item">
-                                        <span className="category-icon">🚫</span>
-                                        <div className="category-info">
-                                            <strong>SPAM</strong>
-                                            <p>Spam, phishing, unsolicited newsletters, cold outreach trying to sell us something</p>
-                                        </div>
-                                    </div>
-                                    <div className="category-item">
-                                        <span className="category-icon">📋</span>
-                                        <div className="category-info">
-                                            <strong>EnCopia</strong>
-                                            <p>Emails with multiple internal @hawkins.es recipients in To or CC (not directed only to me)</p>
-                                        </div>
-                                    </div>
-                                    <div className="category-item">
-                                        <span className="category-icon">🔔</span>
-                                        <div className="category-info">
-                                            <strong>Servicios</strong>
-                                            <p>Transactional notifications from known platforms (booking, banks, Amazon, etc.)</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="config-group">
-                                <label className="config-label">Classification Instructions</label>
-                                <p className="config-description">
-                                    These instructions guide the AI in classifying emails. The AI uses these rules to determine the category.
-                                </p>
-                                <div className="instructions-box">
-                                    <div className="instruction-item">
-                                        <strong>Key Rules:</strong>
-                                        <ul>
-                                            <li>If the email tries to sell us something → <strong>SPAM</strong></li>
-                                            <li>If they request our services → <strong>Interesantes</strong></li>
-                                            <li>Multiple internal recipients → <strong>EnCopia</strong></li>
-                                            <li>Platform notifications → <strong>Servicios</strong></li>
-                                        </ul>
-                                    </div>
-                                    <div className="instruction-item">
-                                        <strong>AI Models Used:</strong>
-                                        <ul>
-                                            <li><code>gpt-oss:120b-cloud</code> - Primary classification</li>
-                                            <li><code>qwen3-coder:480b-cloud</code> - Secondary validation</li>
-                                            <li>Consensus or GPT review for final decision</li>
-                                        </ul>
-                                    </div>
-                                </div>
-                                <p className="config-note">
-                                    ℹ️ <strong>Note:</strong> To modify the AI prompts and categories, edit the <code>ai_service.py</code> file in the backend.
-                                </p>
+                                <CategoryManager />
                             </div>
                         </div>
                     </section>
                 </div>
             </div>
+        </div>
+    )
+}
+
+function CategoryManager() {
+    const { data: categories, isLoading } = useCategories()
+    const createCategory = useCreateCategory()
+    const updateCategory = useUpdateCategory()
+    const deleteCategory = useDeleteCategory()
+    const { showSuccess, showError } = useToast()
+
+    const [editingId, setEditingId] = useState<number | null>(null)
+    const [editForm, setEditForm] = useState<any>({})
+    const [isAdding, setIsAdding] = useState(false)
+    const [newCategory, setNewCategory] = useState({ key: '', name: '', description: '', ai_instruction: '', icon: '📁' })
+
+    const handleEdit = (category: any) => {
+        setEditingId(category.id)
+        setEditForm({ ...category })
+    }
+
+    const handleCancelEdit = () => {
+        setEditingId(null)
+        setEditForm({})
+    }
+
+    const handleSaveEdit = async () => {
+        try {
+            await updateCategory.mutateAsync({ id: editingId!, data: editForm })
+            showSuccess('Category updated')
+            setEditingId(null)
+        } catch (err) {
+            showError('Failed to update category')
+        }
+    }
+
+    const handleDelete = async (id: number) => {
+        if (!confirm('Delete this category?')) return
+        try {
+            await deleteCategory.mutateAsync(id)
+            showSuccess('Category deleted')
+        } catch (err) {
+            showError('Failed to delete category')
+        }
+    }
+
+    const handleAdd = async () => {
+        if (!newCategory.key || !newCategory.ai_instruction) {
+            showError('Key and Instruction are required')
+            return
+        }
+        try {
+            await createCategory.mutateAsync(newCategory)
+            showSuccess('Category created')
+            setIsAdding(false)
+            setNewCategory({ key: '', name: '', description: '', ai_instruction: '', icon: '📁' })
+        } catch (err: any) {
+            showError(err?.response?.data?.detail || 'Failed to create category')
+        }
+    }
+
+    if (isLoading) return <div>Loading categories...</div>
+
+    return (
+        <div className="category-manager">
+            <div className="categories-list">
+                {categories?.map((cat: any) => (
+                    <div key={cat.id} className="category-item-editable" style={{ background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '8px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                        {editingId === cat.id ? (
+                            <div className="edit-form" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} placeholder="Display Name" style={{ flex: 1 }} />
+                                    <input value={editForm.icon} onChange={e => setEditForm({ ...editForm, icon: e.target.value })} placeholder="Icon" style={{ width: '50px' }} />
+                                </div>
+                                <input value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} placeholder="Description" />
+                                <textarea value={editForm.ai_instruction} onChange={e => setEditForm({ ...editForm, ai_instruction: e.target.value })} placeholder="AI Instruction" rows={3} style={{ width: '100%' }} />
+                                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                                    <button onClick={handleSaveEdit} className="btn-primary">Save</button>
+                                    <button onClick={handleCancelEdit} className="btn-secondary">Cancel</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="view-mode" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '1.2em' }}>{cat.icon}</span>
+                                        <strong>{cat.name}</strong>
+                                        <code style={{ fontSize: '0.8em', background: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px' }}>{cat.key}</code>
+                                    </div>
+                                    <p style={{ margin: '4px 0', fontSize: '0.9em', color: 'rgba(255,255,255,0.7)' }}>{cat.description}</p>
+                                    <p style={{ margin: '4px 0', fontSize: '0.85em', color: '#a5b4fc', fontStyle: 'italic' }}>Rule: {cat.ai_instruction.substring(0, 80)}...</p>
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button onClick={() => handleEdit(cat)} className="btn-secondary" style={{ padding: '4px 8px' }}>✏️</button>
+                                    {!cat.is_system && (
+                                        <button onClick={() => handleDelete(cat.id)} className="btn-delete" style={{ padding: '4px 8px' }}>🗑️</button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            {isAdding ? (
+                <div className="add-form" style={{ marginTop: '20px', padding: '15px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                    <h4>New Category</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <input
+                                value={newCategory.key}
+                                onChange={e => setNewCategory({ ...newCategory, key: e.target.value.replace(/\s+/g, '') })}
+                                placeholder="Key (e.g. Proveedores)"
+                                style={{ flex: 1 }}
+                            />
+                            <input value={newCategory.name} onChange={e => setNewCategory({ ...newCategory, name: e.target.value })} placeholder="Display Name" style={{ flex: 1 }} />
+                            <input value={newCategory.icon} onChange={e => setNewCategory({ ...newCategory, icon: e.target.value })} placeholder="Icon" style={{ width: '50px' }} />
+                        </div>
+                        <input value={newCategory.description} onChange={e => setNewCategory({ ...newCategory, description: e.target.value })} placeholder="Description" />
+                        <textarea
+                            value={newCategory.ai_instruction}
+                            onChange={e => setNewCategory({ ...newCategory, ai_instruction: e.target.value })}
+                            placeholder="AI Instruction: Describe what emails belong here..."
+                            rows={3}
+                            style={{ width: '100%' }}
+                        />
+                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                            <button onClick={handleAdd} className="btn-primary">Create Category</button>
+                            <button onClick={() => setIsAdding(false)} className="btn-secondary">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <button onClick={() => setIsAdding(true)} className="btn-primary" style={{ marginTop: '20px', width: '100%' }}>
+                    + Add Custom Category
+                </button>
+            )}
         </div>
     )
 }

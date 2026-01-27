@@ -72,7 +72,13 @@ async def classify_message(
     }
     
     # Classify
-    classification_result = await classify_with_rules_and_ai(message_data, whitelist_domains)
+    # Classify
+    from app.models import Category
+    cat_result = await db.execute(select(Category))
+    categories_db = cat_result.scalars().all()
+    categories = [{"key": c.key, "ai_instruction": c.ai_instruction} for c in categories_db]
+
+    classification_result = await classify_with_rules_and_ai(message_data, whitelist_domains, categories)
     
     if classification_result.get("status") == "error":
         raise HTTPException(
