@@ -124,6 +124,43 @@ async def list_messages(
     return messages
 
 
+@router.patch("/bulk/read")
+async def bulk_mark_as_read(
+    account_id: int = Query(...),
+    classification_label: Optional[str] = Query(None),
+    is_read: bool = Query(True),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mark multiple messages as read/unread.
+    
+    - **account_id**: Account ID to filter messages
+    - **classification_label**: Optional classification label filter
+    - **is_read**: True to mark as read, False to mark as unread
+    """
+    # Build query
+    query = select(Message).where(Message.account_id == account_id)
+    
+    if classification_label:
+        # Join with classifications to filter
+        query = query.join(
+            Classification, Message.id == Classification.message_id
+        ).where(Classification.final_label == classification_label)
+    
+    result = await db.execute(query)
+    messages = result.scalars().all()
+    
+    count = 0
+    for message in messages:
+        if message.is_read != is_read:
+            message.is_read = is_read
+            count += 1
+    
+    await db.commit()
+    
+    return {"updated": count, "total": len(messages)}
+
+
 @router.get("/{message_id}")
 async def get_message(
     message_id: str,
@@ -221,41 +258,7 @@ async def mark_message_read(
     return {"id": message.id, "is_read": message.is_read}
 
 
-@router.patch("/bulk/read")
-async def bulk_mark_as_read(
-    account_id: int = Query(...),
-    classification_label: Optional[str] = Query(None),
-    is_read: bool = Query(True),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Mark multiple messages as read/unread.
-    
-    - **account_id**: Account ID to filter messages
-    - **classification_label**: Optional classification label filter
-    - **is_read**: True to mark as read, False to mark as unread
-    """
-    # Build query
-    query = select(Message).where(Message.account_id == account_id)
-    
-    if classification_label:
-        # Join with classifications to filter
-        query = query.join(
-            Classification, Message.id == Classification.message_id
-        ).where(Classification.final_label == classification_label)
-    
-    result = await db.execute(query)
-    messages = result.scalars().all()
-    
-    count = 0
-    for message in messages:
-        if message.is_read != is_read:
-            message.is_read = is_read
-            count += 1
-    
-    await db.commit()
-    
-    return {"updated": count, "total": len(messages)}
+
 
 
 @router.patch("/{message_id}/star")
