@@ -9,6 +9,7 @@ import MessageViewer from './components/MessageViewer'
 import Composer from './components/Composer'
 import Settings from './components/Settings'
 import SearchBar from './components/SearchBar'
+import SyncStatus from './components/SyncStatus'
 import Toast from './components/Toast'
 import { useToast } from './hooks/useToast'
 import { useToggleStar, useUpdateClassification, useDeleteMessage } from './hooks/useApi'
@@ -28,11 +29,12 @@ function App() {
   const [composerMode, setComposerMode] = useState<'new' | 'reply' | 'forward'>('new')
   const [composerOriginalMessage, setComposerOriginalMessage] = useState<Message | null>(null)
   const [searchFilters, setSearchFilters] = useState<any>({})
-  const [syncProgress, setSyncProgress] = useState<{
-    status: string;
-    message?: string;
-    current?: number;
-    total?: number;
+
+
+  // Dual sync state
+  const [syncState, setSyncState] = useState<{
+    download: { status: 'pending' | 'active' | 'complete' | 'error'; current: number; total: number; message?: string };
+    classify: { status: 'pending' | 'active' | 'complete' | 'error'; current: number; total: number; message?: string };
   } | null>(null)
 
   const { toasts, removeToast, showSuccess, showError, showInfo } = useToast()
@@ -65,7 +67,7 @@ function App() {
     } : undefined
   )
 
-  const startSync = useStartSync()
+
 
   const bulkMarkAsRead = useBulkMarkAsRead()
   const toggleStar = useToggleStar()
@@ -109,38 +111,73 @@ function App() {
   const handleSync = async () => {
     if (!selectedAccount) return
 
-    setSyncProgress({ status: 'starting', message: 'Starting sync...' })
+    // Initialize state
+    setSyncState({
+      download: { status: 'active', current: 0, total: 0, message: 'Starting...' },
+      classify: { status: 'pending', current: 0, total: 0, message: 'Waiting...' }
+    })
 
     await streamSync(
       {
         account_id: selectedAccount,
         auto_classify: autoClassify
       },
-      (progress) => {
-        setSyncProgress(progress)
-
-        // Handle completion
-        if (progress.status === 'complete') {
-          const result = progress.sync_result
+      (data) => {
+        // Parse incoming events
+        if (data.status === 'download_progress' || (data.current && !data.status)) { // Fallback for old events
+          setSyncState(prev => ({
+            ...prev!,
+            download: {
+              status: 'active',
+              current: data.current || 0,
+              total: data.total || 0,
+              message: data.message || 'Downloading...'
+            }
+          }))
+        } else if (data.status === 'classifying' || data.status === 'classifying_progress') {
+          // Mark download as complete if moving to classify
+          setSyncState(prev => ({
+            download: { ...prev!.download, status: 'complete', message: 'Download complete' },
+            classify: {
+              status: 'active',
+              current: data.current || 0,
+              total: data.total || 0,
+              message: data.message || 'Analyzing...'
+            }
+          }))
+        } else if (data.status === 'complete') {
+          const result = data.sync_result
           const newCount = result?.new_messages || 0
-          const classified = progress.classified_count || 0
+          const classified = data.classified_count || 0
+
+          setSyncState(prev => ({
+            download: { ...prev!.download, status: 'complete', current: prev!.download.total, total: prev!.download.total },
+            classify: { ...prev!.classify, status: 'complete', current: classified, total: classified }
+          }))
 
           if (autoClassify && classified > 0) {
             showSuccess(`Synced ${newCount} messages and classified ${classified}`)
           } else {
             showSuccess(`Synced ${newCount} new messages`)
           }
-          setSyncProgress(null)
+
           refetchMessages()
-        } else if (progress.status === 'error') {
-          showError(progress.error || 'Sync failed')
-          setSyncProgress(null)
+
+          // Auto close after 3 seconds
+          setTimeout(() => setSyncState(null), 5000)
+
+        } else if (data.status === 'error') {
+          showError(data.error || 'Sync failed')
+          setSyncState(prev => ({
+            ...prev!,
+            download: { ...prev!.download, status: 'error', message: data.error }
+          }))
         }
       },
       (error) => {
         console.error('Sync stream error:', error)
         showError('Sync connection failed')
-        setSyncProgress(null)
+        setSyncState(null)
       }
     )
   }
@@ -430,18 +467,20 @@ function App() {
             <button
               className="btn-primary"
               onClick={handleSync}
-              disabled={!selectedAccount || (syncProgress !== null)}
+              disabled={!selectedAccount || (syncState !== null)}
             >
-              {syncProgress ? (
-                syncProgress.total ? (
-                  `Downloading ${syncProgress.current || 0}/${syncProgress.total}`
-                ) : (
-                  syncProgress.message || 'Syncing...'
-                )
-              ) : '🔄 Sync'}
+              {syncState ? '🔄 Syncing...' : '🔄 Sync'}
             </button>
           </div>
         </div>
+
+        {syncState && (
+          <SyncStatus
+            download={syncState.download}
+            classify={syncState.classify}
+            onClose={() => setSyncState(null)}
+          />
+        )}
 
         {!selectedAccount ? (
           <div className="empty-state">

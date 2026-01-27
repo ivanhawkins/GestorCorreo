@@ -60,9 +60,10 @@ async def start_sync(
     if not sync_result:
         sync_result = {'status': 'error', 'error': 'Sync produced no result'}
 
-    # Auto-classify new messages if requested
+    # Auto-classify new messages if requested or enabled in account
     classified_count = 0
-    if sync_request.auto_classify and sync_result.get("status") == "success" and sync_result.get("new_messages", 0) > 0:
+    should_classify = account.auto_classify or sync_request.auto_classify
+    if should_classify and sync_result.get("status") == "success" and sync_result.get("new_messages", 0) > 0:
         # Re-using previous logic (simplified for brevity because it's duplicated code)
         # Ideally this should be a helper function 'auto_classify_messages'
         # For now, I will keep the compatibility but I strongly suggest using /stream
@@ -138,7 +139,8 @@ async def stream_sync(
                 sync_final_result = progress
 
         # 2. Auto-Classify Phase
-        if sync_request.auto_classify and sync_final_result and sync_final_result.get("status") == "success" and sync_final_result.get("new_messages", 0) > 0:
+        should_classify = account.auto_classify or sync_request.auto_classify
+        if should_classify and sync_final_result and sync_final_result.get("status") == "success" and sync_final_result.get("new_messages", 0) > 0:
             yield f"data: {json.dumps({'status': 'classifying', 'message': 'Auto-classifying new messages...'})}\n\n"
             
             try:

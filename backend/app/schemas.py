@@ -18,6 +18,7 @@ class AccountCreate(BaseModel):
     password: str  # Will be encrypted before storage
     ssl_verify: bool = True  # Verify SSL certificates
     connection_timeout: int = 30  # Connection timeout in seconds
+    auto_classify: bool = False
     owner_profile: Optional[str] = None  # AI Persona/Profile
 
 
@@ -33,6 +34,7 @@ class AccountUpdate(BaseModel):
     is_active: Optional[bool] = None
     ssl_verify: Optional[bool] = None
     connection_timeout: Optional[int] = None
+    auto_classify: Optional[bool] = None
     owner_profile: Optional[str] = None
 
 
@@ -48,6 +50,7 @@ class AccountResponse(BaseModel):
     is_active: bool
     ssl_verify: bool
     connection_timeout: int
+    auto_classify: bool = False
     owner_profile: Optional[str] = None
     last_sync_error: Optional[str] = None
     created_at: datetime

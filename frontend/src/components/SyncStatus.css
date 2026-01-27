@@ -1,0 +1,119 @@
+.sync-status-panel {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 16px;
+    width: 400px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+}
+
+.sync-status-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 8px;
+}
+
+.sync-status-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: #e0e0e0;
+}
+
+.status-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.status-window {
+    background: #252526;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 10px;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+}
+
+.status-window.active {
+    opacity: 1;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2);
+}
+
+.status-window.complete {
+    opacity: 1;
+    border-color: #10b981;
+}
+
+.window-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.window-header h4 {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.progress-bar-container {
+    height: 6px;
+    background: #333;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: #3b82f6; /* Blue for download */
+    transition: width 0.3s ease;
+}
+
+.progress-fill.classify {
+    background: #8b5cf6; /* Purple for classify */
+}
+
+.status-window.complete .progress-fill {
+    background: #10b981; /* Green when done */
+}
+
+.stats {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: #aaa;
+}
+
+.status-msg {
+    margin: 4px 0 0 0;
+    font-size: 0.75rem;
+    color: #888;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 0 4px;
+}
+
+.close-btn:hover {
+    color: #fff;
+}

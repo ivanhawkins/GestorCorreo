@@ -30,6 +30,7 @@ export interface Account {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  auto_classify?: boolean;
   owner_profile?: string; // User persona
 }
 
@@ -91,6 +92,12 @@ export interface MessageDetail extends Message {
 
 export const createAccount = async (data: AccountCreate): Promise<Account> => {
   const response = await apiClient.post('/api/accounts/', data);
+  return response.data;
+
+};
+
+export const updateAccount = async (id: number, data: Partial<AccountCreate> & { auto_classify?: boolean }): Promise<Account> => {
+  const response = await apiClient.put(`/api/accounts/${id}`, data);
   return response.data;
 };
 

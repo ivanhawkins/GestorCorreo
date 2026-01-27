@@ -28,6 +28,17 @@ export const useCreateAccount = () => {
     });
 };
 
+export const useUpdateAccount = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({ id, data }: { id: number; data: any }) => api.updateAccount(id, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['accounts'] });
+        },
+    });
+};
+
 // Messages hooks
 export const useMessages = (params?: {
     account_id?: number;

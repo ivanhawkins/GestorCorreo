@@ -2,7 +2,7 @@
  * Settings component - manage accounts and test connections
  */
 import { useState } from 'react'
-import { useAccounts, useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from '../hooks/useApi'
+import { useAccounts, useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory, useUpdateAccount } from '../hooks/useApi'
 import { useToast } from '../hooks/useToast'
 import axios from 'axios'
 import './Settings.css'
@@ -82,6 +82,17 @@ export default function Settings({ onClose }: SettingsProps) {
         }
     }
 
+    const updateAccount = useUpdateAccount()
+
+    const handleToggleAutoClassify = async (accountId: number, currentValue: boolean) => {
+        try {
+            await updateAccount.mutateAsync({ id: accountId, data: { auto_classify: !currentValue } })
+            showSuccess(`Auto-classification ${!currentValue ? 'enabled' : 'disabled'}`)
+        } catch (err) {
+            showError('Failed to update account settings')
+        }
+    }
+
     return (
         <div className="settings-overlay" onClick={onClose}>
             <div className="settings" onClick={(e) => e.stopPropagation()}>
@@ -113,8 +124,21 @@ export default function Settings({ onClose }: SettingsProps) {
                                                     <span>{account.imap_host}:{account.imap_port}</span>
                                                 </div>
                                                 <div className="detail-row">
-                                                    <span className="label">Owner Profile (AI Persona):</span>
                                                     <ProfileEditor account={account} onSave={refetch} />
+                                                </div>
+                                                <div className="detail-row">
+                                                    <span className="label">Auto AI Classification:</span>
+                                                    <label className="toggle-label" style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={!!account.auto_classify}
+                                                            onChange={() => handleToggleAutoClassify(account.id, !!account.auto_classify)}
+                                                            disabled={updateAccount.isPending}
+                                                        />
+                                                        <span style={{ fontSize: '0.9em', color: account.auto_classify ? '#4ade80' : 'rgba(255,255,255,0.5)' }}>
+                                                            {account.auto_classify ? 'Active (Classifies new emails)' : 'Disabled'}
+                                                        </span>
+                                                    </label>
                                                 </div>
                                             </div>
                                         </div>
