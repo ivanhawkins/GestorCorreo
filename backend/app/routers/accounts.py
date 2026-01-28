@@ -247,12 +247,12 @@ async def test_connection(
     imap = IMAPService(account, password)
     
     try:
-        success = imap.connect()
+        success = await imap.connect()
         
         if success:
             # Get additional information
-            folders = imap.list_folders()
-            imap.disconnect()
+            folders = await imap.list_folders()
+            await imap.disconnect()
             
             return {
                 "status": "success",

@@ -148,15 +148,24 @@ async def stream_sync(
                 from app.services.rules_engine import classify_with_rules_and_ai
                 
                 # Fetch messages
-                result = await db.execute(
-                    select(Message)
-                    .outerjoin(Classification, Message.id == Classification.message_id)
-                    .where(Message.account_id == sync_request.account_id)
-                    .where(Classification.id == None)
-                    .order_by(Message.date.desc())
-                    .limit(20)
-                )
-                new_messages = result.scalars().all()
+                # Only fetch the messages that were just downloaded
+                new_msg_ids = sync_final_result.get("new_message_ids", [])
+                
+                if not new_msg_ids:
+                    # Should not match normally if new_messages > 0 but safety check
+                    new_messages = []
+                else:
+                    result = await db.execute(
+                        select(Message)
+                        .outerjoin(Classification, Message.id == Classification.message_id)
+                        .where(Message.id.in_(new_msg_ids))
+                        .where(Classification.id == None)
+                    )
+                    new_messages = result.scalars().all()
+                
+                # If for some reason list is empty (e.g. race condition or already classified?)
+                # Fallback to logic only if strictly needed, but better to trust IDs.
+
                 total_to_classify = len(new_messages)
                 
                 if total_to_classify > 0:

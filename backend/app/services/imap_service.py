@@ -11,7 +11,9 @@ from email.utils import parsedate_to_datetime
 from typing import List, Dict, Optional, Tuple
 import json
 from datetime import datetime
+import asyncio
 import uuid
+from functools import partial
 
 from app.models import Account, Message
 from app.utils.logging_config import get_logger
@@ -63,9 +65,14 @@ class IMAPService:
         
         return context
     
-    def connect(self, max_retries: int = 3) -> bool:
+    async def connect(self, max_retries: int = 3) -> bool:
+        """Async wrapper for connect."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, partial(self._connect_sync, max_retries))
+
+    def _connect_sync(self, max_retries: int = 3) -> bool:
         """
-        Connect to IMAP server with retry logic and detailed error handling.
+        Connect to IMAP server with retry logic (Blocking).
         
         Args:
             max_retries: Maximum number of connection attempts
@@ -176,7 +183,13 @@ class IMAPService:
         
         return False
     
-    def disconnect(self):
+    async def disconnect(self):
+        """Async wrapper for disconnect."""
+        if self.connection:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._disconnect_sync)
+
+    def _disconnect_sync(self):
         """Disconnect from IMAP server."""
         if self.connection:
             try:
@@ -203,8 +216,13 @@ class IMAPService:
         except:
             return False
     
-    def list_folders(self) -> List[str]:
-        """List all IMAP folders."""
+    async def list_folders(self) -> List[str]:
+        """Async wrapper for list_folders."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._list_folders_sync)
+
+    def _list_folders_sync(self) -> List[str]:
+        """List all IMAP folders (Blocking)."""
         if not self.connection:
             self.logger.error("Cannot list folders: not connected")
             return []
@@ -231,8 +249,13 @@ class IMAPService:
             self.logger.error(f"Error listing folders: {type(e).__name__}: {e}")
             return []
     
-    def select_folder(self, folder: str = "INBOX") -> bool:
-        """Select an IMAP folder."""
+    async def select_folder(self, folder: str = "INBOX") -> bool:
+        """Async wrapper for select_folder."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, partial(self._select_folder_sync, folder))
+
+    def _select_folder_sync(self, folder: str = "INBOX") -> bool:
+        """Select an IMAP folder (Blocking)."""
         if not self.connection:
             self.logger.error("Cannot select folder: not connected")
             return False
@@ -253,8 +276,13 @@ class IMAPService:
             self.logger.error(f"Error selecting folder '{folder}': {type(e).__name__}: {e}")
             return False
     
-    def get_new_message_uids(self, last_uid: int = 0) -> List[int]:
-        """Get UIDs of new messages since last_uid."""
+    async def get_new_message_uids(self, last_uid: int = 0) -> List[int]:
+        """Async wrapper for get_new_message_uids."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, partial(self._get_new_message_uids_sync, last_uid))
+
+    def _get_new_message_uids_sync(self, last_uid: int = 0) -> List[int]:
+        """Get UIDs of new messages since last_uid (Blocking)."""
         if not self.connection:
             self.logger.error("Cannot get message UIDs: not connected")
             return []
@@ -279,8 +307,13 @@ class IMAPService:
             self.logger.error(f"Error getting message UIDs: {type(e).__name__}: {e}")
             return []
     
-    def fetch_message_headers(self, uid: int) -> Optional[Dict]:
-        """Fetch message headers and basic info."""
+    async def fetch_message_headers(self, uid: int) -> Optional[Dict]:
+        """Async wrapper for fetch_message_headers."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, partial(self._fetch_message_headers_sync, uid))
+
+    def _fetch_message_headers_sync(self, uid: int) -> Optional[Dict]:
+        """Fetch message headers and basic info (Blocking)."""
         if not self.connection:
             self.logger.error("Cannot fetch message: not connected")
             return None
@@ -387,6 +420,17 @@ class IMAPService:
             self.logger.error("Cannot fetch message body: not connected")
             return None
         
+    async def fetch_full_message_body(self, uid: int) -> Optional[Dict]:
+        """Async wrapper for fetch_full_message_body."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, partial(self._fetch_full_message_body_sync, uid))
+
+    def _fetch_full_message_body_sync(self, uid: int) -> Optional[Dict]:
+        """Fetch and parse complete message body with attachments (Blocking)."""
+        if not self.connection:
+            self.logger.error("Cannot fetch message body: not connected")
+            return None
+        
         try:
             from app.services.mime_parser import MIMEParser, fetch_full_message
             
@@ -434,7 +478,7 @@ async def sync_account_messages(
         yield {'status': 'connecting', 'message': f'Connecting to {account.imap_host}...'}
         
         try:
-            if not imap.connect():
+            if not await imap.connect():
                 error_msg = 'Failed to connect to IMAP server'
                 logger.error(f"Sync failed for {account.email_address}: {error_msg}")
                 
@@ -463,7 +507,7 @@ async def sync_account_messages(
         
         # Select folder
         yield {'status': 'selecting_folder', 'message': f'Selecting {folder}...'}
-        if not imap.select_folder(folder):
+        if not await imap.select_folder(folder):
             error_msg = f'Failed to select folder {folder}'
             logger.error(error_msg)
             
@@ -490,7 +534,7 @@ async def sync_account_messages(
         logger.info(f"Last synced UID for {account.email_address}: {last_uid}")
         
         # Get new message UIDs
-        new_uids = imap.get_new_message_uids(last_uid)
+        new_uids = await imap.get_new_message_uids(last_uid)
         
         if not new_uids:
             logger.info(f"No new messages for {account.email_address}")
@@ -516,6 +560,7 @@ async def sync_account_messages(
         
         # Fetch and save new messages
         saved_count = 0
+        new_message_ids = []
         for index, uid in enumerate(new_uids):
             # Yield progress every message (or every N messages if too fast, but 1 by 1 is good for feedback)
             yield {
@@ -525,13 +570,13 @@ async def sync_account_messages(
                 'message': f'Downloading message {index + 1} of {total_messages}...'
             }
 
-            headers = imap.fetch_message_headers(uid)
+            headers = await imap.fetch_message_headers(uid)
             if not headers:
                 logger.warning(f"Skipping UID {uid} - failed to fetch headers")
                 continue
             
             # Fetch full message body
-            body_data = imap.fetch_full_message_body(uid)
+            body_data = await imap.fetch_full_message_body(uid)
             body_text = body_data.get('body_text') if body_data else None
             body_html = body_data.get('body_html') if body_data else None
             has_attachments = len(body_data.get('attachments', [])) > 0 if body_data else False
@@ -558,6 +603,7 @@ async def sync_account_messages(
             
             db.add(message)
             saved_count += 1
+            new_message_ids.append(message.id)
 
             # Update mailbox storage usage
             msg_size = (len(body_text) if body_text else 0) + (len(body_html) if body_html else 0)
@@ -582,7 +628,8 @@ async def sync_account_messages(
         yield {
             'status': 'success',
             'new_messages': saved_count,
-            'total_messages': total_messages
+            'total_messages': total_messages,
+            'new_message_ids': new_message_ids
         }
     
     except Exception as e:
@@ -600,4 +647,4 @@ async def sync_account_messages(
         }
     
     finally:
-        imap.disconnect()
+        await imap.disconnect()

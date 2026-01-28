@@ -55,10 +55,10 @@ const Dashboard: React.FC = () => {
         if (confirm('Are you sure you want to delete this account?')) {
             try {
                 await deleteAccount.mutateAsync({ id, permanent: false })
-                showSuccess('Account moved to trash')
+                showSuccess('Cuenta movida a la papelera')
                 if (selectedAccount === id) setSelectedAccount(null)
             } catch (e) {
-                showError('Failed to delete account')
+                showError('Error al eliminar cuenta')
             }
         }
     }
@@ -66,9 +66,9 @@ const Dashboard: React.FC = () => {
     const handleRestoreAccount = async (id: number) => {
         try {
             await restoreAccount.mutateAsync(id)
-            showSuccess('Account restored')
+            showSuccess('Cuenta restaurada')
         } catch (e) {
-            showError('Failed to restore account')
+            showError('Error al restaurar cuenta')
         }
     }
 
@@ -76,9 +76,9 @@ const Dashboard: React.FC = () => {
         if (confirm('Are you sure you want to PERMANENTLY delete this account? This cannot be undone.')) {
             try {
                 await deleteAccount.mutateAsync({ id, permanent: true })
-                showSuccess('Account permanently deleted')
+                showSuccess('Cuenta eliminada permanentemente')
             } catch (e) {
-                showError('Failed to delete account')
+                showError('Error al eliminar cuenta')
             }
         }
     }
@@ -159,22 +159,22 @@ const Dashboard: React.FC = () => {
             if (target === 'inbox') {
                 // Clear classification
                 await updateClassification.mutateAsync({ messageId, label: null })
-                showSuccess('Message moved to Inbox')
+                showSuccess('Mensaje movido a Bandeja de Entrada')
             } else if (target === 'starred') {
                 // Star the message
                 await toggleStar.mutateAsync({ messageId, isStarred: true })
-                showSuccess('Message starred')
+                showSuccess('Mensaje destacado')
             } else if (target === 'deleted') {
                 // Delete message
                 await deleteMessage.mutateAsync(messageId)
-                showSuccess('Message moved to Deleted')
+                showSuccess('Mensaje movido a Papelera')
             } else if (target === 'category' && value) {
                 // Update classification
                 await updateClassification.mutateAsync({ messageId, label: value })
-                showSuccess(`Moved to ${value}`)
+                showSuccess(`Movido a ${value}`)
             }
         } catch (error) {
-            showError('Failed to move message')
+            showError('Error al mover mensaje')
         }
     }
 
@@ -194,25 +194,35 @@ const Dashboard: React.FC = () => {
             },
             (data) => {
                 // Parse incoming events
-                if (data.status === 'download_progress' || (data.current && !data.status)) { // Fallback for old events
+                if (data.status === 'found_messages') {
+                    setSyncState(prev => ({
+                        ...prev!,
+                        download: {
+                            status: 'active',
+                            current: 0,
+                            total: data.total || 0,
+                            message: data.message || `Encontrados ${data.total} mensajes`
+                        }
+                    }))
+                } else if (data.status === 'downloading' || data.status === 'download_progress' || (data.current && !data.status)) {
                     setSyncState(prev => ({
                         ...prev!,
                         download: {
                             status: 'active',
                             current: data.current || 0,
                             total: data.total || 0,
-                            message: data.message || 'Downloading...'
+                            message: data.message || 'Descargando...'
                         }
                     }))
                 } else if (data.status === 'classifying' || data.status === 'classifying_progress') {
                     // Mark download as complete if moving to classify
                     setSyncState(prev => ({
-                        download: { ...prev!.download, status: 'complete', message: 'Download complete' },
+                        download: { ...prev!.download, status: 'complete', message: 'Descarga completa' },
                         classify: {
                             status: 'active',
                             current: data.current || 0,
                             total: data.total || 0,
-                            message: data.message || 'Analyzing...'
+                            message: data.message || 'Analizando...'
                         }
                     }))
                 } else if (data.status === 'complete') {
@@ -226,9 +236,9 @@ const Dashboard: React.FC = () => {
                     }))
 
                     if (classified > 0) {
-                        showSuccess(`Synced ${newCount} messages and classified ${classified}`)
+                        showSuccess(`Sincronizados ${newCount} mensajes y clasificados ${classified}`)
                     } else {
-                        showSuccess(`Synced ${newCount} new messages`)
+                        showSuccess(`Sincronizados ${newCount} nuevos mensajes`)
                     }
 
                     // Refresh ALL messages data (counts and list)
@@ -238,7 +248,7 @@ const Dashboard: React.FC = () => {
                     setTimeout(() => setSyncState(null), 5000)
 
                 } else if (data.status === 'error') {
-                    showError(data.error || 'Sync failed')
+                    showError(data.error || 'Fallo en sincronización')
                     setSyncState(prev => ({
                         ...prev!,
                         download: { ...prev!.download, status: 'error', message: data.error }
@@ -387,9 +397,9 @@ const Dashboard: React.FC = () => {
 
     const getCategoryTitle = () => {
         switch (categoryFilter) {
-            case 'all': return 'Inbox'
-            case 'starred': return 'Starred'
-            case 'deleted': return 'Trash'
+            case 'all': return 'Bandeja de Entrada'
+            case 'starred': return 'Destacados'
+            case 'deleted': return 'Papelera'
             default:
                 const cat = categories?.find((c: any) => c.key === categoryFilter)
                 return cat ? cat.name : categoryFilter
@@ -530,7 +540,7 @@ const Dashboard: React.FC = () => {
                         onDragOver={handleDragOver}
                         onDrop={(e) => handleDrop(e, 'inbox')}
                     >
-                        📥 Inbox
+                        📥 Bandeja de Entrada
                         <span className="folder-count">
                             {allCounts.unread > 0 && <span className="unread-badge">{allCounts.unread}</span>}
                             <span className="total-count">{allCounts.total}</span>
@@ -543,7 +553,7 @@ const Dashboard: React.FC = () => {
                         onDragOver={handleDragOver}
                         onDrop={(e) => handleDrop(e, 'starred')}
                     >
-                        ⭐ Starred
+                        ⭐ Destacados
                         <span className="folder-count">
                             <span className="total-count">{allMessages?.filter(m => m.is_starred).length || 0}</span>
                         </span>
@@ -592,7 +602,7 @@ const Dashboard: React.FC = () => {
                             onClick={handleNewEmail}
                             disabled={!selectedAccount}
                         >
-                            ✉️ Compose
+                            ✉️ Redactar
                         </button>
                         <button
                             className="btn-toolbar"
@@ -600,7 +610,7 @@ const Dashboard: React.FC = () => {
                             disabled={!selectedAccount || bulkClassifying}
                             title="Classify all unclassified messages with AI"
                         >
-                            {bulkClassifying ? '⏳ Analyzing...' : '🤖 Bulk Classify'}
+                            {bulkClassifying ? '⏳ Analizando...' : '🤖 Clasificar Todo'}
                         </button>
                         <button
                             className="btn-toolbar"
@@ -608,7 +618,7 @@ const Dashboard: React.FC = () => {
                             disabled={!selectedAccount}
                             title="Mark all messages in this folder as read"
                         >
-                            ✅ Mark All Read
+                            ✅ Marcar Leídos
                         </button>
                         <button
                             className="btn-toolbar"
@@ -616,14 +626,14 @@ const Dashboard: React.FC = () => {
                             disabled={!selectedAccount}
                             title="Move all messages in this folder to Trash"
                         >
-                            🗑️ Empty {getCategoryTitle()}
+                            🗑️ Vaciar {getCategoryTitle()}
                         </button>
                         <button
                             className="btn-primary"
                             onClick={handleSync}
                             disabled={!selectedAccount || (syncState !== null)}
                         >
-                            {syncState ? '🔄 Syncing...' : '🔄 Sync'}
+                            {syncState ? '🔄 Sincronizando...' : '🔄 Sincronizar'}
                         </button>
                     </div>
                 </div>
@@ -641,13 +651,13 @@ const Dashboard: React.FC = () => {
                 {
                     !selectedAccount ? (
                         <div className="empty-state">
-                            <p>Select an account to view messages</p>
+                            <p>Selecciona una cuenta para ver mensajes</p>
                         </div>
                     ) : (
                         <>
                             <SearchBar onSearch={handleSearch} onClear={handleClearSearch} />
                             {messagesLoading ? (
-                                <div className="loading-state">Loading messages...</div>
+                                <div className="loading-state">Cargando mensajes...</div>
                             ) : (
                                 <MessageList
                                     messages={messages || []}

@@ -17,9 +17,17 @@ async def login_for_access_token(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     # Authenticate user
+    print(f"DEBUG: Login attempt for user: '{form_data.username}'")
     result = await db.execute(select(User).where(User.username == form_data.username))
     user = result.scalar_one_or_none()
     
+    if user:
+        print(f"DEBUG: User found: {user.username}, Is Admin: {user.is_admin}")
+        is_valid = verify_password(form_data.password, user.password_hash)
+        print(f"DEBUG: Password verification result: {is_valid}")
+    else:
+        print(f"DEBUG: User '{form_data.username}' not found in DB")
+
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

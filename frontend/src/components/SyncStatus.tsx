@@ -35,7 +35,7 @@ export default function SyncStatus({ download, classify, onClose }: SyncStatusPr
     return (
         <div className="sync-status-panel">
             <div className="sync-status-header">
-                <h3>Sync Progress</h3>
+                <h3>Progreso de Sincronización</h3>
                 {onClose && isComplete && (
                     <button className="close-btn" onClick={onClose}>×</button>
                 )}
@@ -46,7 +46,7 @@ export default function SyncStatus({ download, classify, onClose }: SyncStatusPr
                 <div className={`status-window ${download.status}`}>
                     <div className="window-header">
                         <span className="icon">{getStatusIcon(download.status)}</span>
-                        <h4>Receiving Emails</h4>
+                        <h4>Recibiendo Correos</h4>
                     </div>
                     <div className="progress-bar-container">
                         <div
@@ -65,7 +65,7 @@ export default function SyncStatus({ download, classify, onClose }: SyncStatusPr
                 <div className={`status-window ${classify.status}`}>
                     <div className="window-header">
                         <span className="icon">{getStatusIcon(classify.status)}</span>
-                        <h4>Classifying</h4>
+                        <h4>Clasificando</h4>
                     </div>
                     <div className="progress-bar-container">
                         <div
