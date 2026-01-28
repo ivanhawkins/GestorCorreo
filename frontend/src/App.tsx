@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import './App.css'
-import { useAccounts, useMessages, useBulkMarkAsRead, useCategories, streamSync } from './hooks/useApi'
+import { useAccounts, useMessages, useBulkMarkAsRead, useCategories, streamSync, useEmptyFolder } from './hooks/useApi'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Message } from './services/api'
 import axios from 'axios'
@@ -24,8 +24,14 @@ function App() {
   const [showAccountManager, setShowAccountManager] = useState(false)
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all')
-  const [autoClassify, setAutoClassify] = useState(false)
   const [showComposer, setShowComposer] = useState(false)
+
+  // ... (lines 29-139 skipped for brevity in prompt, but replacing block context)
+
+  // Wait, I need to be careful with multi-replace.
+  // I'll make separate replacements for state definition and usage to be safe.
+  // This tool call is for the state definition and handleSync update
+
   const [showSettings, setShowSettings] = useState(false)
   const [bulkClassifying, setBulkClassifying] = useState(false)
   const [composerMode, setComposerMode] = useState<'new' | 'reply' | 'forward'>('new')
@@ -89,6 +95,7 @@ function App() {
 
 
   const bulkMarkAsRead = useBulkMarkAsRead()
+  const emptyFolder = useEmptyFolder()
   const toggleStar = useToggleStar()
   const updateClassification = useUpdateClassification()
   const deleteMessage = useDeleteMessage()
@@ -139,7 +146,7 @@ function App() {
     await streamSync(
       {
         account_id: selectedAccount,
-        auto_classify: autoClassify
+        auto_classify: false
       },
       (data) => {
         // Parse incoming events
@@ -174,7 +181,7 @@ function App() {
             classify: { ...prev!.classify, status: 'complete', current: classified, total: classified }
           }))
 
-          if (autoClassify && classified > 0) {
+          if (classified > 0) {
             showSuccess(`Synced ${newCount} messages and classified ${classified}`)
           } else {
             showSuccess(`Synced ${newCount} new messages`)
@@ -284,6 +291,24 @@ function App() {
       showSuccess(`Marked ${result.updated} messages as read`)
     } catch (error: any) {
       showError('Failed to mark messages as read')
+    }
+  }
+
+  const handleEmptyFolder = async () => {
+    if (!selectedAccount) return
+
+    const folderName = getCategoryTitle()
+    if (!confirm(`Are you sure you want to empty ${folderName}?`)) return
+
+    try {
+      await emptyFolder.mutateAsync({
+        accountId: selectedAccount,
+        folder: categoryFilter === 'deleted' ? 'Deleted' : (categoryFilter === 'all' ? 'INBOX' : undefined),
+        classificationLabel: (categoryFilter !== 'all' && categoryFilter !== 'deleted' && categoryFilter !== 'starred') ? categoryFilter : undefined
+      })
+      showSuccess(`Folder ${folderName} emptied`)
+    } catch (error) {
+      showError('Failed to empty folder')
     }
   }
 
@@ -461,7 +486,7 @@ function App() {
               ✉️ Compose
             </button>
             <button
-              className="btn-ai"
+              className="btn-toolbar"
               onClick={handleBulkClassify}
               disabled={!selectedAccount || bulkClassifying}
               title="Classify all unclassified messages with AI"
@@ -469,21 +494,29 @@ function App() {
               {bulkClassifying ? '⏳ Analyzing...' : '🤖 Bulk Classify'}
             </button>
             <button
-              className="btn-secondary"
+              className="btn-toolbar"
               onClick={handleMarkAllRead}
               disabled={!selectedAccount}
               title="Mark all messages in this folder as read"
             >
               ✅ Mark All Read
             </button>
-            <label className="auto-classify-toggle">
-              <input
-                type="checkbox"
-                checked={autoClassify}
-                onChange={(e) => setAutoClassify(e.target.checked)}
-              />
-              <span>Auto-classify</span>
-            </label>
+            <button
+              className="btn-toolbar"
+              onClick={handleEmptyFolder}
+              disabled={!selectedAccount}
+              title="Move all messages in this folder to Trash"
+            >
+              🗑️ Empty {getCategoryTitle()}
+            </button>
+            <button
+              className="btn-toolbar"
+              onClick={handleEmptyFolder}
+              disabled={!selectedAccount}
+              title="Move all messages in this folder to Trash"
+            >
+              🗑️ Empty {getCategoryTitle()}
+            </button>
             <button
               className="btn-primary"
               onClick={handleSync}
@@ -494,32 +527,36 @@ function App() {
           </div>
         </div>
 
-        {syncState && (
-          <SyncStatus
-            download={syncState.download}
-            classify={syncState.classify}
-            onClose={() => setSyncState(null)}
-          />
-        )}
+        {
+          syncState && (
+            <SyncStatus
+              download={syncState.download}
+              classify={syncState.classify}
+              onClose={() => setSyncState(null)}
+            />
+          )
+        }
 
-        {!selectedAccount ? (
-          <div className="empty-state">
-            <p>Select an account to view messages</p>
-          </div>
-        ) : (
-          <>
-            <SearchBar onSearch={handleSearch} onClear={handleClearSearch} />
-            {messagesLoading ? (
-              <div className="loading-state">Loading messages...</div>
-            ) : (
-              <MessageList
-                messages={messages || []}
-                onMessageClick={handleMessageClick}
-              />
-            )}
-          </>
-        )}
-      </main>
+        {
+          !selectedAccount ? (
+            <div className="empty-state">
+              <p>Select an account to view messages</p>
+            </div>
+          ) : (
+            <>
+              <SearchBar onSearch={handleSearch} onClear={handleClearSearch} />
+              {messagesLoading ? (
+                <div className="loading-state">Loading messages...</div>
+              ) : (
+                <MessageList
+                  messages={messages || []}
+                  onMessageClick={handleMessageClick}
+                />
+              )}
+            </>
+          )
+        }
+      </main >
 
       {
         showAccountManager && (

@@ -250,3 +250,23 @@ export const useDeleteCategory = () => {
         },
     });
 };
+
+// Empty folder / Bulk delete hook
+export const useEmptyFolder = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({ accountId, folder, classificationLabel }: { accountId: number; folder?: string; classificationLabel?: string }) => {
+            await axios.delete(`http://localhost:8000/api/messages/bulk`, {
+                params: {
+                    account_id: accountId,
+                    folder,
+                    classification_label: classificationLabel
+                }
+            });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['messages'] });
+        },
+    });
+};

@@ -75,7 +75,8 @@ async def list_messages(
             or_(
                 Message.subject.ilike(search_pattern),
                 Message.from_email.ilike(search_pattern),
-                Message.from_name.ilike(search_pattern)
+                Message.from_name.ilike(search_pattern),
+                Message.body_text.ilike(search_pattern)
             )
         )
     
@@ -159,6 +160,70 @@ async def bulk_mark_as_read(
     await db.commit()
     
     return {"updated": count, "total": len(messages)}
+
+
+@router.delete("/bulk", status_code=status.HTTP_204_NO_CONTENT)
+async def empty_folder(
+    account_id: int = Query(...),
+    folder: Optional[str] = Query(None),
+    classification_label: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Empty a specific folder or classification (move to Deleted or permanently delete if already in Deleted).
+    """
+    # Build query for messages to delete
+    query = select(Message).where(Message.account_id == account_id)
+    
+    if folder == 'Deleted':
+        # Permanently delete messages in Deleted folder
+        # Determine target messages
+        query = query.join(
+            Classification, Message.id == Classification.message_id
+        ).where(Classification.final_label == 'Deleted')
+        
+        # Execute delete
+        result = await db.execute(query)
+        messages = result.scalars().all()
+        
+        for message in messages:
+            await db.delete(message)
+            
+    else:
+        # Move to Deleted (Soft Delete)
+        if classification_label:
+             query = query.join(
+                Classification, Message.id == Classification.message_id
+            ).where(Classification.final_label == classification_label)
+        elif folder == 'INBOX' or not folder:
+             # Inbox means unclassified (or specifically classified as Inbox if we had that)
+             query = query.outerjoin(
+                Classification, Message.id == Classification.message_id
+            ).where(Classification.final_label.is_(None))
+        
+        result = await db.execute(query)
+        messages = result.scalars().all()
+        
+        for message in messages:
+            # Check if classification exists
+            cls_result = await db.execute(
+                select(Classification).where(Classification.message_id == message.id)
+            )
+            classification = cls_result.scalar_one_or_none()
+            
+            if classification:
+                classification.final_label = 'Deleted'
+                classification.decided_by = 'user_bulk_delete'
+            else:
+                new_classification = Classification(
+                    message_id=message.id,
+                    final_label='Deleted',
+                    decided_by='user_bulk_delete'
+                )
+                db.add(new_classification)
+
+    await db.commit()
+    return None
 
 
 @router.get("/{message_id}")
