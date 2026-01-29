@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react'
 import '../App.css'
 import { useAccounts, useMessages, useBulkMarkAsRead, useCategories, streamSync, useEmptyFolder, useDeleteAccount, useRestoreAccount, useToggleStar, useUpdateClassification, useDeleteMessage } from '../hooks/useApi'
 import { useQueryClient } from '@tanstack/react-query'
+import { apiClient } from '../services/api'
 import type { Message, MessageDetail } from '../services/api'
-import axios from 'axios'
+
 import AccountManager from '../components/AccountManager'
 import MessageList from '../components/MessageList'
 import MessageViewer from '../components/MessageViewer'
@@ -243,6 +244,7 @@ const Dashboard: React.FC = () => {
 
                     // Refresh ALL messages data (counts and list)
                     queryClient.invalidateQueries({ queryKey: ['messages'] })
+                    queryClient.invalidateQueries({ queryKey: ['accounts'] })
 
                     // Auto close after 3 seconds
                     setTimeout(() => setSyncState(null), 5000)
@@ -317,7 +319,7 @@ const Dashboard: React.FC = () => {
                 await Promise.allSettled(
                     batch.map(async (msg) => {
                         try {
-                            await axios.post(`http://localhost:8000/api/classify/${msg.id}`)
+                            await apiClient.post(`/api/classify/${msg.id}`)
                             classified++
                         } catch (error) {
                             failed++
@@ -331,7 +333,10 @@ const Dashboard: React.FC = () => {
             }
 
             // Reload messages to show updated classifications
+            // Reload messages and counters
             await refetchMessages()
+            queryClient.invalidateQueries({ queryKey: ['messages'] })
+            queryClient.invalidateQueries({ queryKey: ['accounts'] })
 
             showSuccess(`Bulk classification complete! Classified: ${classified}, Failed: ${failed}`)
         } catch (error: any) {

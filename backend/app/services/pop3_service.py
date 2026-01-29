@@ -144,6 +144,29 @@ class POP3Service:
             'in_reply_to': msg.get('In-Reply-To', ''),
             'references': msg.get('References', '')
         }
+
+    async def fetch_headers_only(self, msg_num: int) -> Optional[Dict]:
+        """Fetch only headers for a message using TOP command."""
+        try:
+            loop = asyncio.get_event_loop()
+            # Fetch headers (0 lines of body)
+            response, lines, octets = await loop.run_in_executor(
+                None,
+                self.connection.top,
+                msg_num,
+                0
+            )
+            
+            # Parse headers
+            msg_data = b'\r\n'.join(lines)
+            msg = email.message_from_bytes(msg_data)
+            
+            # Reuse get_message_headers
+            return await self.get_message_headers(msg)
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch headers only for {msg_num}: {e}")
+            return None
     
     async def get_message_body(self, msg: email.message.Message) -> Dict:
         """Extract body and attachments from message."""
@@ -205,6 +228,28 @@ class POP3Service:
             'attachments': attachments
         }
     
+    async def get_all_uidls(self) -> Dict[int, str]:
+        """Get list of (msg_num, uid) for all messages."""
+        try:
+            loop = asyncio.get_event_loop()
+            response, lines, octets = await loop.run_in_executor(None, self.connection.uidl)
+            
+            uid_map = {}
+            for line in lines:
+                try:
+                    # Format: b'1 start_uid_xxxxx'
+                    parts = line.decode().split(' ')
+                    if len(parts) >= 2:
+                        msg_num = int(parts[0])
+                        uid = parts[1]
+                        uid_map[msg_num] = uid
+                except Exception:
+                    continue
+            return uid_map
+        except Exception as e:
+            logger.error(f"Failed to get UIDLs: {e}")
+            return {}
+
     async def disconnect(self):
         """Disconnect from POP3 server."""
         try:
@@ -214,3 +259,4 @@ class POP3Service:
                 logger.info("Disconnected from POP3 server")
         except Exception as e:
             logger.error(f"Error disconnecting from POP3: {e}")
+
