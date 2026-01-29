@@ -13,10 +13,11 @@ interface MessageViewerProps {
     message: Message
     onClose: () => void
     onReply?: (message: Message) => void
+    onReplyAll?: (message: Message | MessageDetail) => void
     onForward?: (message: Message) => void
 }
 
-export default function MessageViewer({ message, onClose, onReply, onForward }: MessageViewerProps) {
+export default function MessageViewer({ message, onClose, onReply, onReplyAll, onForward }: MessageViewerProps) {
     const [body, setBody] = useState<MessageBody | null>(null)
     const [attachments, setAttachments] = useState<Attachment[]>([])
     const [loading, setLoading] = useState(true)
@@ -95,6 +96,14 @@ export default function MessageViewer({ message, onClose, onReply, onForward }: 
         }
     }
 
+    const handleReplyAll = () => {
+        if (onReplyAll) {
+            // Pass full details if available, otherwise fallback to summary
+            onReplyAll(messageDetails || message)
+            onClose()
+        }
+    }
+
     const handleForward = () => {
         if (onForward) {
             onForward(message)
@@ -134,6 +143,9 @@ export default function MessageViewer({ message, onClose, onReply, onForward }: 
                     <div className="header-actions">
                         <button className="btn-action" onClick={handleReply} title="Responder">
                             ↩️
+                        </button>
+                        <button className="btn-action" onClick={handleReplyAll} title="Responder a Todos">
+                            ⏮️
                         </button>
                         <button className="btn-action" onClick={handleForward} title="Reenviar">
                             ➡️

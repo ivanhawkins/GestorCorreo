@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import '../App.css'
 import { useAccounts, useMessages, useBulkMarkAsRead, useCategories, streamSync, useEmptyFolder, useDeleteAccount, useRestoreAccount, useToggleStar, useUpdateClassification, useDeleteMessage } from '../hooks/useApi'
 import { useQueryClient } from '@tanstack/react-query'
-import type { Message } from '../services/api'
+import type { Message, MessageDetail } from '../services/api'
 import axios from 'axios'
 import AccountManager from '../components/AccountManager'
 import MessageList from '../components/MessageList'
@@ -31,8 +31,8 @@ const Dashboard: React.FC = () => {
 
     const [showSettings, setShowSettings] = useState(false)
     const [bulkClassifying, setBulkClassifying] = useState(false)
-    const [composerMode, setComposerMode] = useState<'new' | 'reply' | 'forward'>('new')
-    const [composerOriginalMessage, setComposerOriginalMessage] = useState<Message | null>(null)
+    const [composerMode, setComposerMode] = useState<'new' | 'reply' | 'reply_all' | 'forward'>('new')
+    const [composerOriginalMessage, setComposerOriginalMessage] = useState<Message | MessageDetail | null>(null)
     const [searchFilters, setSearchFilters] = useState<any>({})
 
 
@@ -269,6 +269,12 @@ const Dashboard: React.FC = () => {
 
     const handleReply = (message: Message) => {
         setComposerMode('reply')
+        setComposerOriginalMessage(message)
+        setShowComposer(true)
+    }
+
+    const handleReplyAll = (message: Message | MessageDetail) => {
+        setComposerMode('reply_all')
         setComposerOriginalMessage(message)
         setShowComposer(true)
     }
@@ -683,6 +689,7 @@ const Dashboard: React.FC = () => {
                         message={selectedMessage}
                         onClose={() => setSelectedMessage(null)}
                         onReply={handleReply}
+                        onReplyAll={handleReplyAll}
                         onForward={handleForward}
                     />
                 )

@@ -8,7 +8,7 @@ import type { Message } from '../services/api'
 import axios from 'axios'
 import './Composer.css'
 
-type ComposerMode = 'new' | 'reply' | 'forward'
+type ComposerMode = 'new' | 'reply' | 'reply_all' | 'forward'
 
 interface Attachment {
     filename: string
@@ -45,6 +45,44 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
                 ? originalMessage.subject
                 : `Re: ${originalMessage.subject || ''}`)
             setBody(`\n\n--- Original Message ---\nFrom: ${originalMessage.from_name || originalMessage.from_email}\nDate: ${new Date(originalMessage.date).toLocaleString()}\nSubject: ${originalMessage.subject}\n\n`)
+        } else if (mode === 'reply_all') {
+            setSubject(originalMessage.subject?.startsWith('Re:')
+                ? originalMessage.subject
+                : `Re: ${originalMessage.subject || ''}`)
+            setBody(`\n\n--- Original Message ---\nFrom: ${originalMessage.from_name || originalMessage.from_email}\nDate: ${new Date(originalMessage.date).toLocaleString()}\nSubject: ${originalMessage.subject}\n\n`)
+
+            // Handle To/Cc for Reply All
+            const fromEmail = originalMessage.from_email;
+            const toSet = new Set<string>([fromEmail]);
+
+            // Try to extract extra recipients from message details (passed as casted object)
+            // We expect to_addresses/cc_addresses to be JSON strings if available
+            const detail = originalMessage as any;
+
+            if (detail.to_addresses) {
+                try {
+                    const tos = JSON.parse(detail.to_addresses);
+                    if (Array.isArray(tos)) {
+                        tos.forEach((t: string) => toSet.add(t));
+                    }
+                } catch (e) {
+                    console.warn('Failed to parse to_addresses', e);
+                }
+            }
+
+            setTo(Array.from(toSet).join(', '));
+
+            if (detail.cc_addresses) {
+                try {
+                    const ccs = JSON.parse(detail.cc_addresses);
+                    if (Array.isArray(ccs)) {
+                        setCc(ccs.join(', '));
+                    }
+                } catch (e) {
+                    console.warn('Failed to parse cc_addresses', e);
+                }
+            }
+
         } else if (mode === 'forward') {
             setSubject(originalMessage.subject?.startsWith('Fwd:')
                 ? originalMessage.subject
@@ -157,6 +195,7 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
     const getTitle = () => {
         switch (mode) {
             case 'reply': return '↩️ Reply'
+            case 'reply_all': return '⏮️ Reply All'
             case 'forward': return '➡️ Forward'
             default: return '✉️ Compose Email'
         }
@@ -267,7 +306,7 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
 
                     <div className="composer-actions">
                         {/* AI Generator Button */}
-                        {(mode === 'reply' && originalMessage) && (
+                        {((mode === 'reply' || mode === 'reply_all') && originalMessage) && (
                             <div className="ai-controls" style={{ display: 'flex', gap: '10px', flex: 1, marginRight: '10px' }}>
                                 <input
                                     type="text"
