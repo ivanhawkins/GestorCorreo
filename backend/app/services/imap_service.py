@@ -700,65 +700,70 @@ async def sync_account_messages(
                 'message': f'Downloading message {index + 1} of {total_messages}...'
             }
 
-            headers = await imap.fetch_message_headers(uid)
-            if not headers:
-                logger.warning(f"Skipping UID {uid} - failed to fetch headers")
-                continue
-            
-            # Fetch full message body
-            body_data = await imap.fetch_full_message_body(uid)
-            body_text = body_data.get('body_text') if body_data else None
-            body_html = body_data.get('body_html') if body_data else None
-            has_attachments = len(body_data.get('attachments', [])) > 0 if body_data else False
-            
-            # Create message record
-            message = Message(
-                id=str(uuid.uuid4()),
-                account_id=account.id,
-                imap_uid=uid,
-                message_id=headers['message_id'],
-                subject=headers['subject'],
-                from_name=headers['from_name'],
-                from_email=headers['from_email'],
-                to_addresses=headers['to_addresses'],
-                cc_addresses=headers['cc_addresses'],
-                date=headers['date'],
-                snippet=headers['snippet'],
-                body_text=body_text,
-                body_html=body_html,
-                is_read=False,
-                is_starred=False,
-                has_attachments=has_attachments
-            )
-            
-            db.add(message)
-            saved_count += 1
-            new_message_ids.append(message.id)
-            
-            # Save attachments to database if any
-            if body_data and body_data.get('attachments'):
-                from app.models import Attachment
-                for att_data in body_data['attachments']:
-                    attachment = Attachment(
-                        message_id=message.id,
-                        filename=att_data.get('filename', 'unknown'),
-                        mime_type=att_data.get('mime_type'),
-                        size_bytes=att_data.get('size_bytes', 0),
-                        local_path=att_data.get('local_path', '')
-                    )
-                    db.add(attachment)
+            try:
+                headers = await imap.fetch_message_headers(uid)
+                if not headers:
+                    logger.warning(f"Skipping UID {uid} - failed to fetch headers")
+                    continue
+                
+                # Fetch full message body
+                body_data = await imap.fetch_full_message_body(uid)
+                body_text = body_data.get('body_text') if body_data else None
+                body_html = body_data.get('body_html') if body_data else None
+                has_attachments = len(body_data.get('attachments', [])) > 0 if body_data else False
+                
+                # Create message record
+                message = Message(
+                    id=str(uuid.uuid4()),
+                    account_id=account.id,
+                    imap_uid=uid,
+                    message_id=headers['message_id'],
+                    subject=headers['subject'],
+                    from_name=headers['from_name'],
+                    from_email=headers['from_email'],
+                    to_addresses=headers['to_addresses'],
+                    cc_addresses=headers['cc_addresses'],
+                    date=headers['date'],
+                    snippet=headers['snippet'],
+                    body_text=body_text,
+                    body_html=body_html,
+                    is_read=False,
+                    is_starred=False,
+                    has_attachments=has_attachments
+                )
+                
+                db.add(message)
+                saved_count += 1
+                new_message_ids.append(message.id)
+                
+                # Save attachments to database if any
+                if body_data and body_data.get('attachments'):
+                    from app.models import Attachment
+                    for att_data in body_data['attachments']:
+                        attachment = Attachment(
+                            message_id=message.id,
+                            filename=att_data.get('filename', 'unknown'),
+                            mime_type=att_data.get('mime_type'),
+                            size_bytes=att_data.get('size_bytes', 0),
+                            local_path=att_data.get('local_path', '')
+                        )
+                        db.add(attachment)
 
-            # Update mailbox storage usage
-            msg_size = (len(body_text) if body_text else 0) + (len(body_html) if body_html else 0)
-            # Add attachment sizes if any
-            # Basic text/html size update for now
-            if account.mailbox_storage_bytes is None:
-                account.mailbox_storage_bytes = 0
-            account.mailbox_storage_bytes += msg_size
-                        
-            # Commit periodically to avoid huge transactions
-            if saved_count % 10 == 0:
+                # Update mailbox storage usage
+                msg_size = (len(body_text) if body_text else 0) + (len(body_html) if body_html else 0)
+                if account.mailbox_storage_bytes is None:
+                    account.mailbox_storage_bytes = 0
+                account.mailbox_storage_bytes += msg_size
+                            
+                # Commit after EACH message to ensure isolation of errors
+                # This prevents one bad message from rolling back the entire batch
                 await db.commit()
+                
+            except Exception as e:
+                await db.rollback()
+                logger.error(f"Error processing message UID {uid}: {e}")
+                # Continue to next message
+                continue
         
         await db.commit()
         

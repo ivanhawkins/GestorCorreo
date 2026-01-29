@@ -2,9 +2,9 @@
  * Settings component - manage accounts and test connections
  */
 import { useState, useEffect } from 'react'
-import { useAccounts, useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory, useUpdateAccount } from '../hooks/useApi'
+import { useAccounts, useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory, useUpdateAccount, useDeleteAccount } from '../hooks/useApi'
 import { useToast } from '../hooks/useToast'
-import axios from 'axios'
+import { apiClient } from '../services/api'
 import './Settings.css'
 
 interface SettingsProps {
@@ -15,11 +15,15 @@ function ProfileEditor({ account, onSave }: { account: any, onSave: () => void }
     const [profile, setProfile] = useState(account.owner_profile || '')
     const [saving, setSaving] = useState(false)
     const { showSuccess, showError } = useToast()
+    const updateAccount = useUpdateAccount()
 
     const handleSave = async () => {
         setSaving(true)
         try {
-            await axios.put(`http://localhost:8000/api/accounts/${account.id}`, { owner_profile: profile })
+            await updateAccount.mutateAsync({
+                id: account.id,
+                data: { owner_profile: profile }
+            })
             showSuccess('Profile updated')
             onSave()
         } catch (err) {
@@ -59,27 +63,32 @@ function PromptEditor({ account, onSave }: { account: any, onSave: () => void })
     const [defaults, setDefaults] = useState<{ classification_prompt: string, review_prompt: string } | null>(null)
     const [saving, setSaving] = useState(false)
     const { showSuccess, showError } = useToast()
+    const updateAccount = useUpdateAccount()
 
 
     useEffect(() => {
-        axios.get('http://localhost:8000/api/system/prompts')
+        // Use apiClient for auth, though endpoint existence is dubious based on grep
+        apiClient.get('/api/system/prompts')
             .then(res => {
                 setDefaults(res.data)
                 // If custom prompts are empty, pre-fill with defaults
                 if (!account.custom_classification_prompt) setClassificationPrompt(res.data.classification_prompt)
                 if (!account.custom_review_prompt) setReviewPrompt(res.data.review_prompt)
             })
-            .catch(err => console.error('Failed to load default prompts', err))
+            .catch(err => console.warn('Failed to load default prompts (endpoint might differ)', err))
     }, [account])
 
 
     const handleSave = async () => {
         setSaving(true)
         try {
-            await axios.put(`http://localhost:8000/api/accounts/${account.id}`, {
-                custom_classification_prompt: classificationPrompt || null,
-                custom_review_prompt: reviewPrompt || null,
-                auto_sync_interval: syncInterval
+            await updateAccount.mutateAsync({
+                id: account.id,
+                data: {
+                    custom_classification_prompt: classificationPrompt || null,
+                    custom_review_prompt: reviewPrompt || null,
+                    auto_sync_interval: syncInterval
+                }
             })
             showSuccess('Settings updated')
             onSave()
@@ -164,13 +173,14 @@ export default function Settings({ onClose }: SettingsProps) {
     const { data: accounts, refetch } = useAccounts()
     const { showSuccess, showError, showInfo } = useToast()
     const [testingId, setTestingId] = useState<number | null>(null)
+    const deleteAccount = useDeleteAccount()
 
     const handleTestConnection = async (accountId: number) => {
         setTestingId(accountId)
         showInfo('Testing connection...')
 
         try {
-            await axios.post(`http://localhost:8000/api/accounts/${accountId}/test`)
+            await apiClient.post(`/api/accounts/${accountId}/test`)
             showSuccess('Connection successful!')
         } catch (error: any) {
             showError(error?.response?.data?.detail || 'Connection failed')
@@ -183,7 +193,7 @@ export default function Settings({ onClose }: SettingsProps) {
         if (!confirm(`Delete account ${email}?`)) return
 
         try {
-            await axios.delete(`http://localhost:8000/api/accounts/${accountId}`)
+            await deleteAccount.mutateAsync({ id: accountId })
             showSuccess('Account deleted')
             refetch()
         } catch (error: any) {

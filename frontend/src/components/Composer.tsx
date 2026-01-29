@@ -83,6 +83,7 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
         setAttachments(prev => prev.filter((_, i) => i !== index))
     }
 
+    const [aiIntent, setAiIntent] = useState('')
     const [generating, setGenerating] = useState(false)
 
     const handleGenerateAI = async () => {
@@ -101,7 +102,7 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
                 original_from_email: originalMessage.from_email,
                 original_subject: originalMessage.subject,
                 original_body: originalMessage.snippet || "No content",
-                user_instruction: "Genera una respuesta profesional.",
+                user_instruction: aiIntent || "Genera una respuesta profesional.",
                 owner_profile: ownerProfile
             })
 
@@ -109,6 +110,7 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
                 // Append to current body
                 setBody(prev => prev + '\n' + response.data.reply_body)
                 showSuccess('AI Reply Generated!')
+                setAiIntent('') // Clear intent after generation
             }
         } catch (error) {
             console.error(error)
@@ -266,16 +268,26 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
                     <div className="composer-actions">
                         {/* AI Generator Button */}
                         {(mode === 'reply' && originalMessage) && (
-                            <button
-                                type="button"
-                                onClick={handleGenerateAI}
-                                className="btn-ai-generate"
-                                disabled={generating}
-                                title="Generate with AI"
-                                style={{ marginRight: 'auto' }}
-                            >
-                                {generating ? '🎲 Generating...' : '🎲 AI Reply'}
-                            </button>
+                            <div className="ai-controls" style={{ display: 'flex', gap: '10px', flex: 1, marginRight: '10px' }}>
+                                <input
+                                    type="text"
+                                    value={aiIntent}
+                                    onChange={(e) => setAiIntent(e.target.value)}
+                                    placeholder="Instrucción (ej: Rechaza amablemente...)"
+                                    className="ai-intent-input"
+                                    style={{ flex: 1, padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleGenerateAI}
+                                    className="btn-ai-generate"
+                                    disabled={generating}
+                                    title="Generate with AI"
+                                    style={{ whiteSpace: 'nowrap' }}
+                                >
+                                    {generating ? '🎲 Generando...' : '🎲 Generar con IA'}
+                                </button>
+                            </div>
                         )}
 
                         <button type="button" onClick={onClose} className="btn-secondary">
@@ -290,3 +302,4 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
         </div>
     )
 }
+

@@ -104,21 +104,60 @@ class RemoteAIClient:
         """
         async with httpx.AsyncClient(timeout=timeout, verify=False) as client:
             try:
+                # Construct generation URL
+                # If api_url ends with /models, strip it to get base
+                base_url = self.api_url.replace('/chat/models', '').replace('/models', '').rstrip('/')
+                
+                # Use /chat/chat endpoint as requested
+                generate_url = f"{base_url}/chat/chat"
+                
                 response = await client.post(
-                    self.api_url,
+                    generate_url,
                     headers={"x-api-key": self.api_key},
                     json={
-                        "model": model,
+                        "modelo": model,
                         "prompt": prompt
                     }
                 )
                 response.raise_for_status()
-                data = response.json()
                 
-                # Adapt response to Ollama format
+                # Read raw text first for debugging/fallback
+                raw_text = response.text
+                
+                try:
+                    data = response.json()
+                    success = data.get("success", True)
+                    
+                    # Adapt response to Ollama format
+                    # /api/chat returns "message": {"content": "..."}
+                    message_content = ""
+                    if "message" in data and "content" in data["message"]:
+                        message_content = data["message"]["content"]
+                    elif "choices" in data and isinstance(data["choices"], list) and len(data["choices"]) > 0:
+                        # OpenAI format
+                        first_choice = data["choices"][0]
+                        if "message" in first_choice and "content" in first_choice["message"]:
+                            message_content = first_choice["message"]["content"]
+                        elif "text" in first_choice:
+                            message_content = first_choice["text"]
+                    elif "response" in data:
+                         # Fallback for /api/generate
+                        message_content = data["response"]
+                    elif "respuesta" in data:
+                        # Fallback for custom API
+                        message_content = data["respuesta"]
+                    else:
+                        # Fallback: keep raw text if we can't extract specific content
+                        message_content = raw_text
+                
+                except json.JSONDecodeError:
+                    # Fallback for plain text response (or empty)
+                    message_content = raw_text
+                    success = True # Assume success if status code was 200
+                
                 return {
-                    "response": data.get("respuesta", ""),
-                    "success": data.get("success", True)
+                    "response": message_content,
+                    "success": success
                 }
             except httpx.HTTPError as e:
                 print(f"Remote AI API error: {e}")
@@ -494,28 +533,7 @@ async def generate_reply(
         owner_profile=owner_profile
     )
 
-    try:
-        # Use GPT model for better writing
-        response = await ollama_client.generate(GPT_MODEL, prompt, format="json") # Should be text, but let's check format
-        # Actually for generation we usually want plain text, or we can ask for specific JSON structure.
-        # Let's ask for plain text for the body to be simple.
-        
-        # Re-call with text format
-        response = await ollama_client.generate(GPT_MODEL, prompt, format="json") 
-        # Wait, the prompt implies "Redacta ÚNICAMENTE el cuerpo". 
-        # But my client 'generate' method defaults to JSON if format not specified? 
-        # Let's check the client generate method.
-        # It takes format arg.
-        
-        # Let's use format="json" and ask for {"reply_body": "..."} to be safe/structured? 
-        # Or just text. Text is easier for "body only". 
-        # But current client implementation might force "json" param if I didn't change it.
-        # Line 91: format: str = "json".
-        
-        # Let's update the PROMPT to ask for JSON to safely extract the body.
-        pass
-    except Exception as e:
-        return {"error": str(e)}
+    # Continue with secure JSON prompt construction defined below
         
     # Re-doing the function properly with JSON for safety
     
@@ -530,9 +548,26 @@ async def generate_reply(
     try:
         response = await ai_client.generate(gpt_model, json_prompt, format="json")
         result_text = response.get("response", "{}")
-        result_json = json.loads(result_text)
+        
+        try:
+            result_json = json.loads(result_text)
+            reply_body = result_json.get("reply_body", "")
+            if not reply_body and isinstance(result_json, dict):
+                 # Maybe it's directly in another key or just empty?
+                 # If keys look like "body", "content", try them
+                 reply_body = result_json.get("body") or result_json.get("content") or ""
+            
+            if not reply_body:
+                 # If JSON parsed but empty/irrelevant, fallback to text if it looks like prose
+                 # But if result_text was literally "{}", nothing to do.
+                 if len(result_text) > 5 and "{" not in result_text[:5]:
+                      reply_body = result_text 
+        except json.JSONDecodeError:
+            # Not JSON, assume it's the text body directly
+            reply_body = result_text
+
         return {
-            "reply_body": result_json.get("reply_body", "")
+            "reply_body": reply_body
         }
     except Exception as e:
          return {
