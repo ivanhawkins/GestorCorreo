@@ -25,7 +25,13 @@ async def lifespan(app: FastAPI):
     async with AsyncSessionLocal() as db:
         await init_default_account(db)
 
+    # Start Background Scheduler
+    from app.services.scheduler import start_scheduler, shutdown_scheduler
+    start_scheduler()
+
     yield
+
+    shutdown_scheduler()
 
 
 app = FastAPI(

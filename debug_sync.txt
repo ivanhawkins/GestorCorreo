@@ -1,0 +1,4 @@
+DEBUG: Account 2 (ivan@hawkins.es) - Last UID in DB: 0
+DEBUG: No last message found
+DEBUG: Account 2 (ivan@hawkins.es) - Last UID in DB: 96421
+DEBUG: Found message ID 456bd635-5f3c-4666-b6af-cbd6ff1de719 with UID 96421
