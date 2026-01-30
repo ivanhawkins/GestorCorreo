@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
 from app.models import User, Account
-from app.schemas import UserCreate, UserResponse
+from app.schemas import UserCreate, UserResponse, UserPasswordUpdate
 from app.auth import get_password_hash
 from app.dependencies import get_current_admin_user
 
@@ -77,17 +77,7 @@ async def delete_user(
         raise HTTPException(status_code=404, detail="User not found")
         
     if permanent:
-        # Check 30 days retention
-        if user.deleted_at:
-            from datetime import datetime, timedelta
-            # Ensure deleted_at is timezone aware or naive consistent with strict types
-            # Assuming naive UTC or local for now as per minimal setup
-            cutoff = datetime.now() - timedelta(days=30)
-            if user.deleted_at > cutoff:
-                 raise HTTPException(
-                    status_code=400, 
-                    detail="Cannot permanently delete user. Must stay in trash for 30 days."
-                )
+        # Restriction removed: Admin can permanently delete anytime
         await db.delete(user)
     else:
         from datetime import datetime
@@ -113,3 +103,24 @@ async def restore_user(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+@router.put("/{user_id}/password", status_code=status.HTTP_200_OK)
+async def update_password(
+    user_id: int,
+    password_data: UserPasswordUpdate,
+    current_user: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
+    
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    hashed_password = get_password_hash(password_data.password)
+    user.password_hash = hashed_password
+    
+    await db.commit()
+    return {"message": "Password updated successfully"}

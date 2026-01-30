@@ -427,7 +427,11 @@ export const deleteUser = async (id: number, permanent: boolean = false) => {
 };
 
 export const restoreUser = async (id: number) => {
-  const response = await apiClient.post(`/api/users/${id}/restore`);
+  return response.data;
+};
+
+export const updateUserPassword = async (userId: number, password: string) => {
+  const response = await apiClient.put(`/api/users/${userId}/password`, { password });
   return response.data;
 };
 

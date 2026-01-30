@@ -193,6 +193,11 @@ class UserCreate(BaseModel):
     is_admin: bool = False
 
 
+class UserPasswordUpdate(BaseModel):
+    """Schema for updating user password."""
+    password: str
+
+
 class UserResponse(BaseModel):
     """Schema for user response."""
     id: int

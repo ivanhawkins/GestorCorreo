@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getUsers, createUser, deleteUser, restoreUser, getAIConfig, updateAIConfig, getAvailableModels, type AIConfigUpdate } from '../services/api';
+import { getUsers, createUser, deleteUser, restoreUser, updateUserPassword, getAIConfig, updateAIConfig, getAvailableModels, type AIConfigUpdate } from '../services/api';
 import type { User } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -173,6 +173,20 @@ const AdminDashboard: React.FC = () => {
         } catch (e: any) {
             setError(e.response?.data?.detail || 'Failed to permanently delete user');
         }
+    }
+
+
+    const handlePasswordChange = async (id: number, username: string) => {
+        const newPassword = prompt(`Enter new password for ${username}:`);
+        if (!newPassword) return; // User cancelled
+
+        try {
+            await updateUserPassword(id, newPassword);
+            setSuccessMsg(`Password updated for ${username}`);
+        } catch (e) {
+            console.error(e);
+            setError("Failed to update password");
+        }
     };
 
     if (loading && users.length === 0 && deletedUsers.length === 0) return <div style={{ padding: '2rem' }}>Loading admin dashboard...</div>;
@@ -321,13 +335,31 @@ const AdminDashboard: React.FC = () => {
                                                 <td style={{ padding: '0.75rem' }}><span style={{ color: 'green' }}>Active</span></td>
                                                 <td style={{ padding: '0.75rem' }}>
                                                     {!u.is_admin || u.username !== 'admin' ? (
-                                                        <button
-                                                            onClick={() => handleDelete(u.id)}
-                                                            style={{ padding: '4px 8px', background: '#fff', border: '1px solid #dc3545', color: '#dc3545', borderRadius: '4px', cursor: 'pointer' }}
-                                                        >
-                                                            🗑️ Delete
-                                                        </button>
-                                                    ) : <span style={{ color: '#999', fontSize: '0.8rem' }}>Protected</span>}
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleDelete(u.id)}
+                                                                style={{ padding: '4px 8px', background: '#fff', border: '1px solid #dc3545', color: '#dc3545', borderRadius: '4px', cursor: 'pointer' }}
+                                                            >
+                                                                🗑️ Delete
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handlePasswordChange(u.id, u.username)}
+                                                                style={{ padding: '4px 8px', background: '#fff', border: '1px solid #17a2b8', color: '#17a2b8', borderRadius: '4px', cursor: 'pointer', marginLeft: '5px' }}
+                                                            >
+                                                                🔑 Pass
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <span style={{ color: '#999', fontSize: '0.8rem', marginRight: '5px' }}>Protected</span>
+                                                            <button
+                                                                onClick={() => handlePasswordChange(u.id, u.username)}
+                                                                style={{ padding: '4px 8px', background: '#fff', border: '1px solid #17a2b8', color: '#17a2b8', borderRadius: '4px', cursor: 'pointer' }}
+                                                            >
+                                                                🔑 Pass
+                                                            </button>
+                                                        </>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))
@@ -369,108 +401,112 @@ const AdminDashboard: React.FC = () => {
                         </div>
                     </div>
                 </div>
-            )}
+            )
+            }
 
             {/* AI Config Tab */}
-            {tab === 'ai-config' && (
-                <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-                    <div style={{ backgroundColor: '#f8f9fa', padding: '2rem', borderRadius: '8px' }}>
-                        <h2 style={{ marginBottom: '2rem' }}>⚙️ Configuración de IA para Clasificación</h2>
+            {
+                tab === 'ai-config' && (
+                    <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+                        <div style={{ backgroundColor: '#f8f9fa', padding: '2rem', borderRadius: '8px' }}>
+                            <h2 style={{ marginBottom: '2rem' }}>⚙️ Configuración de IA para Clasificación</h2>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>API URL</label>
-                                <input
-                                    style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ced4da' }}
-                                    placeholder="https://192.168.1.45/chat/models"
-                                    value={aiConfig.api_url}
-                                    onChange={e => setAiConfig({ ...aiConfig, api_url: e.target.value })}
-                                />
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>API URL</label>
+                                    <input
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                                        placeholder="https://192.168.1.45/chat/models"
+                                        value={aiConfig.api_url}
+                                        onChange={e => setAiConfig({ ...aiConfig, api_url: e.target.value })}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>API Key</label>
+                                    <input
+                                        type="password"
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                                        placeholder="Dejar vacío para mantener la actual..."
+                                        value={aiConfig.api_key}
+                                        onChange={e => setAiConfig({ ...aiConfig, api_key: e.target.value })}
+                                    />
+                                    <small style={{ color: '#6c757d' }}>Opcional. Solo ingresa si quieres cambiar la API Key actual.</small>
+                                </div>
+
+                                <div>
+                                    <button
+                                        onClick={handleTestConnection}
+                                        disabled={loadingModels}
+                                        style={{
+                                            padding: '0.75rem 1.5rem',
+                                            backgroundColor: loadingModels ? '#6c757d' : '#17a2b8',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            cursor: loadingModels ? 'not-allowed' : 'pointer',
+                                            fontWeight: 'bold'
+                                        }}
+                                    >
+                                        {loadingModels ? '🔄 Conectando...' : '🔌 Probar Conexión y Cargar Modelos'}
+                                    </button>
+                                </div>
+
+                                {availableModels.length > 0 && (
+                                    <>
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Modelo Primario (GPT)</label>
+                                            <select
+                                                style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                                                value={aiConfig.primary_model}
+                                                onChange={e => setAiConfig({ ...aiConfig, primary_model: e.target.value })}
+                                            >
+                                                <option value="">Selecciona un modelo...</option>
+                                                {availableModels.map(model => (
+                                                    <option key={model} value={model}>{model}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Modelo Secundario (Qwen)</label>
+                                            <select
+                                                style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                                                value={aiConfig.secondary_model}
+                                                onChange={e => setAiConfig({ ...aiConfig, secondary_model: e.target.value })}
+                                            >
+                                                <option value="">Selecciona un modelo...</option>
+                                                {availableModels.map(model => (
+                                                    <option key={model} value={model}>{model}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <button
+                                                onClick={handleSaveAIConfig}
+                                                style={{
+                                                    padding: '0.75rem 2rem',
+                                                    backgroundColor: '#28a745',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '4px',
+                                                    cursor: 'pointer',
+                                                    fontWeight: 'bold',
+                                                    fontSize: '1rem'
+                                                }}
+                                            >
+                                                💾 Guardar Configuración
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
                             </div>
-
-                            <div>
-                                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>API Key</label>
-                                <input
-                                    type="password"
-                                    style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ced4da' }}
-                                    placeholder="Dejar vacío para mantener la actual..."
-                                    value={aiConfig.api_key}
-                                    onChange={e => setAiConfig({ ...aiConfig, api_key: e.target.value })}
-                                />
-                                <small style={{ color: '#6c757d' }}>Opcional. Solo ingresa si quieres cambiar la API Key actual.</small>
-                            </div>
-
-                            <div>
-                                <button
-                                    onClick={handleTestConnection}
-                                    disabled={loadingModels}
-                                    style={{
-                                        padding: '0.75rem 1.5rem',
-                                        backgroundColor: loadingModels ? '#6c757d' : '#17a2b8',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '4px',
-                                        cursor: loadingModels ? 'not-allowed' : 'pointer',
-                                        fontWeight: 'bold'
-                                    }}
-                                >
-                                    {loadingModels ? '🔄 Conectando...' : '🔌 Probar Conexión y Cargar Modelos'}
-                                </button>
-                            </div>
-
-                            {availableModels.length > 0 && (
-                                <>
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Modelo Primario (GPT)</label>
-                                        <select
-                                            style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ced4da' }}
-                                            value={aiConfig.primary_model}
-                                            onChange={e => setAiConfig({ ...aiConfig, primary_model: e.target.value })}
-                                        >
-                                            <option value="">Selecciona un modelo...</option>
-                                            {availableModels.map(model => (
-                                                <option key={model} value={model}>{model}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Modelo Secundario (Qwen)</label>
-                                        <select
-                                            style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ced4da' }}
-                                            value={aiConfig.secondary_model}
-                                            onChange={e => setAiConfig({ ...aiConfig, secondary_model: e.target.value })}
-                                        >
-                                            <option value="">Selecciona un modelo...</option>
-                                            {availableModels.map(model => (
-                                                <option key={model} value={model}>{model}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <button
-                                            onClick={handleSaveAIConfig}
-                                            style={{
-                                                padding: '0.75rem 2rem',
-                                                backgroundColor: '#28a745',
-                                                color: 'white',
-                                                border: 'none',
-                                                borderRadius: '4px',
-                                                cursor: 'pointer',
-                                                fontWeight: 'bold',
-                                                fontSize: '1rem'
-                                            }}
-                                        >
-                                            💾 Guardar Configuración
-                                        </button>
-                                    </div>
-                                </>
-                            )}
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
+
         </div>
     );
 };
