@@ -39,14 +39,31 @@ export default function MessageViewer({ message, onClose, onReply, onReplyAll, o
     const loadMessageContent = async () => {
         setLoading(true)
         try {
-            const [bodyData, attachmentsData, detailsData] = await Promise.all([
-                getMessageBody(message.id),
-                getMessageAttachments(message.id),
-                getMessage(message.id)
-            ])
-            setBody(bodyData)
-            setAttachments(attachmentsData)
+            // Fetch message details always (incluye body_text y body_html)
+            const detailsData = await getMessage(message.id)
             setMessageDetails(detailsData)
+
+            // Intentar cargar body separado; si falla, usar el que viene en details
+            let bodyData: MessageBody | null = null
+            try {
+                bodyData = await getMessageBody(message.id)
+            } catch (bodyErr) {
+                console.warn('⚠️ /body endpoint falló, usando body del getMessage como fallback:', bodyErr)
+                bodyData = {
+                    body_text: detailsData.body_text,
+                    body_html: detailsData.body_html
+                }
+            }
+            setBody(bodyData)
+
+            // Cargar adjuntos independientemente
+            try {
+                const attachmentsData = await getMessageAttachments(message.id)
+                setAttachments(attachmentsData)
+            } catch (attErr) {
+                console.warn('⚠️ Error cargando adjuntos:', attErr)
+                setAttachments([])
+            }
         } catch (error) {
             console.error('Error loading message content:', error)
         } finally {
