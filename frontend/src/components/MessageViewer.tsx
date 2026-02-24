@@ -1,13 +1,20 @@
 /**
  * MessageViewer component - displays full message with body and attachments
+ * Uses ONLY getMessage() - no separate /body or /attachments calls needed.
+ * The GET /api/messages/{id} endpoint already returns body_text, body_html and attachments.
  */
 import { useState, useEffect } from 'react'
 import DOMPurify from 'dompurify'
-import type { Message, MessageBody, Attachment, MessageDetail } from '../services/apiExtended'
-import { getMessageBody, getMessageAttachments, getAttachmentDownloadUrl, getMessage } from '../services/apiExtended'
+import type { Message, MessageDetail } from '../services/api'
+import { getMessage } from '../services/api'
 import { useMarkAsRead, useDeleteMessage } from '../hooks/useApi'
 import { useToast } from '../hooks/useToast'
 import './MessageViewer.css'
+
+// Build attachment download URL using the same origin (no hardcoded host)
+const getAttachmentDownloadUrl = (attachmentId: number): string => {
+    return `/api/attachments/${attachmentId}`
+}
 
 interface MessageViewerProps {
     message: Message
@@ -18,11 +25,10 @@ interface MessageViewerProps {
 }
 
 export default function MessageViewer({ message, onClose, onReply, onReplyAll, onForward }: MessageViewerProps) {
-    const [body, setBody] = useState<MessageBody | null>(null)
-    const [attachments, setAttachments] = useState<Attachment[]>([])
     const [loading, setLoading] = useState(true)
     const [showHtml, setShowHtml] = useState(true)
     const [messageDetails, setMessageDetails] = useState<MessageDetail | null>(null)
+    const [loadError, setLoadError] = useState<string | null>(null)
 
     const markAsRead = useMarkAsRead()
     const deleteMessage = useDeleteMessage()
@@ -30,7 +36,6 @@ export default function MessageViewer({ message, onClose, onReply, onReplyAll, o
 
     useEffect(() => {
         loadMessageContent()
-        // Mark as read if not already read
         if (!message.is_read) {
             markAsRead.mutate({ messageId: message.id, isRead: true })
         }
@@ -38,34 +43,14 @@ export default function MessageViewer({ message, onClose, onReply, onReplyAll, o
 
     const loadMessageContent = async () => {
         setLoading(true)
+        setLoadError(null)
         try {
-            // Fetch message details always (incluye body_text y body_html)
-            const detailsData = await getMessage(message.id)
-            setMessageDetails(detailsData)
-
-            // Intentar cargar body separado; si falla, usar el que viene en details
-            let bodyData: MessageBody | null = null
-            try {
-                bodyData = await getMessageBody(message.id)
-            } catch (bodyErr) {
-                console.warn('⚠️ /body endpoint falló, usando body del getMessage como fallback:', bodyErr)
-                bodyData = {
-                    body_text: detailsData.body_text,
-                    body_html: detailsData.body_html
-                }
-            }
-            setBody(bodyData)
-
-            // Cargar adjuntos independientemente
-            try {
-                const attachmentsData = await getMessageAttachments(message.id)
-                setAttachments(attachmentsData)
-            } catch (attErr) {
-                console.warn('⚠️ Error cargando adjuntos:', attErr)
-                setAttachments([])
-            }
+            // Single call — getMessage returns body_text, body_html AND attachments
+            const details = await getMessage(message.id)
+            setMessageDetails(details)
         } catch (error) {
             console.error('Error loading message content:', error)
+            setLoadError('No se pudo cargar el contenido del mensaje.')
         } finally {
             setLoading(false)
         }
@@ -91,8 +76,8 @@ export default function MessageViewer({ message, onClose, onReply, onReplyAll, o
 
     const sanitizeHtml = (html: string): string => {
         return DOMPurify.sanitize(html, {
-            ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a', 'img', 'table', 'tr', 'td', 'th', 'div', 'span', 'h1', 'h2', 'h3', 'ul', 'ol', 'li'],
-            ALLOWED_ATTR: ['href', 'src', 'alt', 'style', 'class']
+            ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'a', 'img', 'table', 'tr', 'td', 'th', 'div', 'span', 'h1', 'h2', 'h3', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'hr', 'b', 'i'],
+            ALLOWED_ATTR: ['href', 'src', 'alt', 'style', 'class', 'target', 'rel']
         })
     }
 
@@ -107,28 +92,20 @@ export default function MessageViewer({ message, onClose, onReply, onReplyAll, o
     }
 
     const handleReply = () => {
-        if (onReply) {
-            onReply(message)
-            onClose()
-        }
+        if (onReply) { onReply(message); onClose() }
     }
 
     const handleReplyAll = () => {
-        if (onReplyAll) {
-            // Pass full details if available, otherwise fallback to summary
-            onReplyAll(messageDetails || message)
-            onClose()
-        }
+        if (onReplyAll) { onReplyAll(messageDetails || message); onClose() }
     }
 
     const handleForward = () => {
-        if (onForward) {
-            onForward(message)
-            onClose()
-        }
+        if (onForward) { onForward(message); onClose() }
     }
 
-
+    const attachments = messageDetails?.attachments || []
+    const bodyHtml = messageDetails?.body_html
+    const bodyText = messageDetails?.body_text
 
     return (
         <div className="message-viewer-overlay" onClick={onClose}>
@@ -158,21 +135,12 @@ export default function MessageViewer({ message, onClose, onReply, onReplyAll, o
                         </div>
                     </div>
                     <div className="header-actions">
-                        <button className="btn-action" onClick={handleReply} title="Responder">
-                            ↩️
-                        </button>
-                        <button className="btn-action" onClick={handleReplyAll} title="Responder a Todos">
-                            ⏮️
-                        </button>
-                        <button className="btn-action" onClick={handleForward} title="Reenviar">
-                            ➡️
-                        </button>
+                        <button className="btn-action" onClick={handleReply} title="Responder">↩️</button>
+                        <button className="btn-action" onClick={handleReplyAll} title="Responder a Todos">⏮️</button>
+                        <button className="btn-action" onClick={handleForward} title="Reenviar">➡️</button>
                         <button
                             className="btn-action btn-danger"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleDelete();
-                            }}
+                            onClick={(e) => { e.stopPropagation(); handleDelete(); }}
                             title="Eliminar"
                         >
                             🗑️
@@ -184,33 +152,28 @@ export default function MessageViewer({ message, onClose, onReply, onReplyAll, o
                 <div className="message-viewer-body">
                     {loading ? (
                         <div className="loading-state">Cargando mensaje...</div>
+                    ) : loadError ? (
+                        <div className="error-state" style={{ padding: '1rem', color: '#c62828', background: '#ffebee', borderRadius: '4px' }}>
+                            ⚠️ {loadError}
+                            <button onClick={loadMessageContent} style={{ marginLeft: '1rem', cursor: 'pointer' }}>Reintentar</button>
+                        </div>
                     ) : (
                         <>
-                            {body?.body_html && body?.body_text && (
+                            {bodyHtml && bodyText && (
                                 <div className="body-toggle">
-                                    <button
-                                        className={showHtml ? 'active' : ''}
-                                        onClick={() => setShowHtml(true)}
-                                    >
-                                        HTML
-                                    </button>
-                                    <button
-                                        className={!showHtml ? 'active' : ''}
-                                        onClick={() => setShowHtml(false)}
-                                    >
-                                        Texto
-                                    </button>
+                                    <button className={showHtml ? 'active' : ''} onClick={() => setShowHtml(true)}>HTML</button>
+                                    <button className={!showHtml ? 'active' : ''} onClick={() => setShowHtml(false)}>Texto</button>
                                 </div>
                             )}
 
                             <div className="message-content">
-                                {showHtml && body?.body_html ? (
+                                {showHtml && bodyHtml ? (
                                     <div
                                         className="html-content"
-                                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(body.body_html) }}
+                                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(bodyHtml) }}
                                     />
                                 ) : (
-                                    <pre className="text-content">{body?.body_text || 'Sin contenido'}</pre>
+                                    <pre className="text-content">{bodyText || 'Sin contenido'}</pre>
                                 )}
                             </div>
 

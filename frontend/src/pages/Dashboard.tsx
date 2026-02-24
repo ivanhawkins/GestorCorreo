@@ -449,7 +449,7 @@ const Dashboard: React.FC = () => {
         return (
             <div className="app">
                 <header className="app-header">
-                    <h1>📧 Hawkins Mail</h1>
+                    <h1>📧 Hawkins Mail <span style={{ fontSize: '0.7rem', color: '#aaa', fontWeight: 'normal' }}>v.0.1</span></h1>
                     <p className="subtitle">No accounts configured</p>
                     <button onClick={logout} style={{ fontSize: '0.8rem', padding: '0.3rem' }}>Logout ({user?.username})</button>
                 </header>
@@ -474,7 +474,7 @@ const Dashboard: React.FC = () => {
             <aside className="sidebar">
                 <div className="sidebar-header">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                        <h2>📧 Hawkins</h2>
+                        <h2>📧 Hawkins <span style={{ fontSize: '0.6rem', color: '#aaa', fontWeight: 'normal', verticalAlign: 'middle' }}>v.0.1</span></h2>
                         {user?.is_admin && <button onClick={() => navigate('/admin')} style={{ fontSize: '0.8rem', padding: '0.2rem', cursor: 'pointer' }} title="Admin Area">🔑</button>}
                     </div>
                     <div style={{ fontSize: '0.8rem', color: '#888', marginBottom: '0.5rem' }}>

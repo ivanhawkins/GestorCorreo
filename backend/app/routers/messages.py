@@ -280,7 +280,7 @@ async def get_message(
     message_id: str,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get a specific message by ID with full details including body."""
+    """Get a specific message by ID with full details including body and attachments."""
     result = await db.execute(
         select(Message, Classification.final_label).outerjoin(
             Classification, Message.id == Classification.message_id
@@ -295,6 +295,12 @@ async def get_message(
         )
     
     message, classification_label = row
+    
+    # Fetch attachments for this message
+    att_result = await db.execute(
+        select(Attachment).where(Attachment.message_id == message_id)
+    )
+    attachments = att_result.scalars().all()
     
     message_dict = {
         "id": message.id,
@@ -312,7 +318,18 @@ async def get_message(
         "has_attachments": message.has_attachments,
         "classification_label": classification_label,
         "body_text": message.body_text,
-        "body_html": message.body_html
+        "body_html": message.body_html,
+        "message_id": message.message_id if hasattr(message, 'message_id') else None,
+        "folder": message.folder if hasattr(message, 'folder') else "INBOX",
+        "attachments": [
+            {
+                "id": att.id,
+                "filename": att.filename,
+                "mime_type": att.mime_type,
+                "size_bytes": att.size_bytes
+            }
+            for att in attachments
+        ]
     }
     
     return message_dict

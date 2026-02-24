@@ -121,6 +121,12 @@ export interface MessageDetail extends Message {
   body_text?: string;
   body_html?: string;
   message_id: string;
+  attachments?: Array<{
+    id: number;
+    filename: string;
+    mime_type?: string;
+    size_bytes: number;
+  }>;
 }
 
 
