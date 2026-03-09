@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Mail Manager API",
     description="Local email management with AI classification",
-    version="0.1.0",
+    version="v303",
     lifespan=lifespan
 )
 
