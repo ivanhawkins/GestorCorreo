@@ -146,6 +146,55 @@ async def classify_batch(
     }
 
 
+@router.post("/pending/{account_id}")
+async def classify_pending(
+    account_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Finds all unclassified messages for an account and classifies them.
+    Returns the total number of messages processed.
+    """
+    import asyncio
+    
+    # Verify account belongs to user
+    result = await db.execute(
+        select(Account).where(Account.id == account_id, Account.user_id == current_user.id)
+    )
+    account = result.scalar_one_or_none()
+    if not account:
+         raise HTTPException(status_code=404, detail="Account not found")
+         
+    # Find all unclassified messages
+    result = await db.execute(
+        select(Message.id)
+        .outerjoin(Classification, Message.id == Classification.message_id)
+        .where(Message.account_id == account_id)
+        .where(Classification.id.is_(None))
+        .limit(50)  # Process in batches of 50 to avoid timeouts
+    )
+    unclassified_ids = result.scalars().all()
+    
+    if not unclassified_ids:
+        return {
+             "status": "success",
+             "message": "No hay correos pendientes de clasificar.",
+             "classified": 0
+        }
+        
+    try:
+        count = await run_classification(db, account, unclassified_ids)
+        return {
+             "status": "success", 
+             "message": f"Se han clasificado {count} correos correctamente.",
+             "classified": count,
+             "total_processed": len(unclassified_ids)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{message_id}")
 async def get_classification(
     message_id: str,

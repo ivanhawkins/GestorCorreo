@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import '../App.css'
-import { useAccounts, useMessages, useBulkMarkAsRead, useCategories, streamSync, useEmptyFolder, useDeleteAccount, useRestoreAccount, useToggleStar, useUpdateClassification, useDeleteMessage } from '../hooks/useApi'
+import { useAccounts, useMessages, useBulkMarkAsRead, useCategories, streamSync, useEmptyFolder, useDeleteAccount, useRestoreAccount, useToggleStar, useUpdateClassification, useDeleteMessage, useClassifyPendingMessages } from '../hooks/useApi'
 import { useQueryClient } from '@tanstack/react-query'
 import { resyncMessageBodies, resyncMessageAttachments } from '../services/api'
 import type { Message, MessageDetail } from '../services/api'
@@ -33,6 +33,7 @@ const Dashboard: React.FC = () => {
     const [showSettings, setShowSettings] = useState(false)
     const [isResyncingBodies, setIsResyncingBodies] = useState(false)
     const [isResyncingAttachments, setIsResyncingAttachments] = useState(false)
+    const [isClassifyingPending, setIsClassifyingPending] = useState(false)
     const [composerMode, setComposerMode] = useState<'new' | 'reply' | 'reply_all' | 'forward'>('new')
     const [composerOriginalMessage, setComposerOriginalMessage] = useState<Message | MessageDetail | null>(null)
     const [searchFilters, setSearchFilters] = useState<any>({})
@@ -145,6 +146,7 @@ const Dashboard: React.FC = () => {
     const toggleStar = useToggleStar()
     const updateClassification = useUpdateClassification()
     const deleteMessage = useDeleteMessage()
+    const classifyPending = useClassifyPendingMessages()
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault()
@@ -307,6 +309,28 @@ const Dashboard: React.FC = () => {
             showError('Error al recuperar el contenido de los correos')
         } finally {
             setIsResyncingBodies(false)
+        }
+    }
+
+    const handleClassifyPending = async () => {
+        if (!selectedAccount) return
+        if (!confirm('Esto forzará a la IA a clasificar TODOS los correos descargados que aún no tengan categoría asignada. Puede tardar un rato. ¿Continuar?')) return
+
+        setIsClassifyingPending(true)
+        showInfo('Analizando correos pendientes...')
+
+        try {
+            const result = await classifyPending.mutateAsync(selectedAccount)
+            if (result.classified > 0) {
+                showSuccess(`¡Análisis completado! Se han clasificado ${result.classified} de ${result.total_processed} correos analizados.`)
+                queryClient.invalidateQueries({ queryKey: ['messages'] })
+            } else {
+                showInfo(result.message || 'No se encontraron correos pendientes para clasificar.')
+            }
+        } catch (error: any) {
+            showError(error?.response?.data?.detail || 'Error al intentar clasificar los correos pendientes.')
+        } finally {
+            setIsClassifyingPending(false)
         }
     }
 
@@ -661,6 +685,14 @@ const Dashboard: React.FC = () => {
                             title="Recuperar adjuntos de correos que los tienen pendientes"
                         >
                             {isResyncingAttachments ? '⏳ Recuperando...' : '📎 Recuperar Adjuntos'}
+                        </button>
+                        <button
+                            className="btn-toolbar"
+                            onClick={handleClassifyPending}
+                            disabled={!selectedAccount || isClassifyingPending}
+                            title="Fuerza a la IA a analizar todos los correos que falten por clasificar"
+                        >
+                            {isClassifyingPending ? '⏳ Analizando...' : '🤖 Clasificar Pendientes'}
                         </button>
                     </div>
                 </div>

@@ -133,6 +133,11 @@ export const getMessages = async (params?: {
   return response.data;
 };
 
+export const toggleStar = async (messageId: string, isStarred: boolean): Promise<{ updated: number }> => {
+  const response = await apiClient.put(`/api/messages/${messageId}/flags`, { is_read: undefined, is_starred: isStarred });
+  return response.data;
+};
+
 export const getMessage = async (id: string): Promise<MessageDetail> => {
   const response = await apiClient.get(`/api/messages/${id}`);
   return response.data;
@@ -148,6 +153,41 @@ export const deleteMessage = async (id: string) => {
   return response.data;
 };
 
+// --- Classification ---
+export interface Classification {
+  id: number;
+  message_id: string;
+  gpt_label?: string;
+  gpt_confidence?: number;
+  gpt_rationale?: string;
+  qwen_label?: string;
+  qwen_confidence?: number;
+  qwen_rationale?: string;
+  final_label: string;
+  final_reason?: string;
+  decided_by: string;
+  decided_at: string;
+}
+
+export const getClassification = async (messageId: string): Promise<Classification> => {
+  const response = await apiClient.get(`/api/classifications/${messageId}`);
+  return response.data;
+};
+
+export const updateClassification = async (messageId: string, classificationLabel: string | null): Promise<{ updated: number }> => {
+  const response = await apiClient.put(`/api/messages/${messageId}/classify`, { classification_label: classificationLabel });
+  return response.data;
+};
+
+export const classifyMessage = async (messageId: string): Promise<any> => {
+  const response = await apiClient.post(`/api/classify/${messageId}`);
+  return response.data;
+};
+
+export const classifyPendingMessages = async (accountId: number): Promise<{ status: string, message: string, classified: number, total_processed: number }> => {
+  const response = await apiClient.post(`/api/classify/pending/${accountId}`);
+  return response.data;
+};
 
 // Sync
 export interface SyncRequest {
@@ -227,33 +267,7 @@ export const streamSync = async (
   }
 };
 
-// Classification (placeholder for future)
-export interface Classification {
-  id: number;
-  message_id: string;
-  gpt_label?: string;
-  gpt_confidence?: number;
-  gpt_rationale?: string;
-  qwen_label?: string;
-  qwen_confidence?: number;
-  qwen_rationale?: string;
-  final_label: string;
-  final_reason?: string;
-  decided_by: string;
-  decided_at: string;
-}
 
-export const getClassification = async (messageId: string): Promise<Classification> => {
-  const response = await apiClient.get(`/api/classifications/${messageId}`);
-  return response.data;
-};
-
-export const updateClassification = async (messageId: string, label: string | null) => {
-  const response = await apiClient.put(`/api/messages/${messageId}/classification`, null, {
-    params: { label }
-  });
-  return response.data;
-};
 
 // Categories
 export interface Category {

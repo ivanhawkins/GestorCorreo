@@ -19,6 +19,7 @@ from app.models import Account, Message
 from app.utils.logging_config import get_logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.services.scheduler import run_classification
 
 logger = get_logger(__name__)
 
@@ -663,6 +664,19 @@ async def sync_account_messages(
                         except Exception as e:
                             logger.error(f"Failed to save UID cache: {e}")
 
+                    # FIX 7: Classify message immediately (1-to-1 processing)
+                    if account.auto_classify:
+                        yield {
+                            'status': 'classifying_progress',
+                            'current': index + 1,
+                            'total': total_new,
+                            'message': f'Analizando correo {index + 1} de {total_new}...'
+                        }
+                        try:
+                            await run_classification(db, account, [message.id])
+                        except Exception as class_error:
+                            logger.error(f"Error automagically classifying POP3 message {message.id}: {class_error}")
+
                 except Exception as e:
                     logger.error(f"Error processing POP3 message {msg_num} (uid={uid}): {e}")
                     continue
@@ -849,6 +863,19 @@ async def sync_account_messages(
                 # Commit after EACH message to ensure isolation of errors
                 # This prevents one bad message from rolling back the entire batch
                 await db.commit()
+                
+                # Classify 1-by-1 immediately
+                if account.auto_classify:
+                    yield {
+                        'status': 'classifying_progress',
+                        'current': index + 1,
+                        'total': total_messages,
+                        'message': f'Analizando correo {index + 1} de {total_messages}...'
+                    }
+                    try:
+                        await run_classification(db, account, [message.id])
+                    except Exception as class_error:
+                        logger.error(f"Error automagically classifying IMAP message {message.id}: {class_error}")
                 
             except Exception as e:
                 await db.rollback()

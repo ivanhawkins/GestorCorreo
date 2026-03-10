@@ -124,6 +124,20 @@ export const useUpdateClassification = () => {
     });
 };
 
+export const useClassifyPendingMessages = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (accountId: number) => {
+            const response = await apiClient.post(`/api/classify/pending/${accountId}`);
+            return response.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['messages'] });
+        },
+    });
+};
+
 // Classification hooks
 export const useClassifyMessage = () => {
     const queryClient = useQueryClient();
