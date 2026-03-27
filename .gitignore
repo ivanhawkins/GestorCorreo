@@ -1,40 +1,71 @@
-# Dependencies
+# ──────────────────────────────────────────
+# Dependencias (se instalan en el servidor)
+# ──────────────────────────────────────────
 node_modules/
 __pycache__/
 *.pyc
 .venv/
 venv/
 env/
+laravel-backend/vendor/
 
-# Build outputs
+# ──────────────────────────────────────────
+# Build outputs del frontend
+# ──────────────────────────────────────────
+frontend/dist/
+frontend/build/
+frontend/build_errors*.txt
+frontend/build_output*.txt
+frontend/build_prod*.txt
+frontend/build_final*.txt
+frontend/dev.log
 dist/
 build/
 *.egg-info/
-target/
 
-# Database & data
+# ──────────────────────────────────────────
+# Bases de datos y datos locales
+# ──────────────────────────────────────────
 data/
 *.db
 *.sqlite
 *.sqlite3
 
-# Environment
+# ──────────────────────────────────────────
+# Variables de entorno (NUNCA en git)
+# ──────────────────────────────────────────
 .env
 .env.local
+.env.*.local
 
-# IDE
+# ──────────────────────────────────────────
+# Logs y archivos temporales de debug
+# ──────────────────────────────────────────
+*.log
+logs/
+laravel-backend/storage/logs/
+check_log.txt
+debug_sync.txt
+
+# ──────────────────────────────────────────
+# Cache POP3
+# ──────────────────────────────────────────
+laravel-backend/storage/app/pop3_cache/
+
+# ──────────────────────────────────────────
+# IDE y SO
+# ──────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
-logs/
+# ──────────────────────────────────────────
+# Claude Code (configuración local)
+# ──────────────────────────────────────────
+.claude/settings.local.json
 
 # Tauri
 src-tauri/target/
