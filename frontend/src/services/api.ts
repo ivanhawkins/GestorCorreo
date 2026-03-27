@@ -262,6 +262,19 @@ export const streamSync = async (
         }
       }
     }
+
+    // Procesar lo que quede en el buffer al cerrar el stream
+    if (buffer.trim().startsWith('data: ')) {
+      const jsonStr = buffer.trim().slice(6);
+      if (jsonStr) {
+        try {
+          const parsed = JSON.parse(jsonStr);
+          onMessage(parsed);
+        } catch (e) {
+          console.error('Error parsing SSE final chunk', e);
+        }
+      }
+    }
   } catch (err) {
     onError(err);
   }
@@ -432,6 +445,17 @@ export const updateAIConfig = async (config: AIConfigUpdate) => {
 export const getAvailableModels = async (): Promise<string[]> => {
   const response = await apiClient.get('/api/ai-config/models');
   return response.data.models;
+};
+
+// AI Status & Generation
+export const getAiStatus = async (): Promise<{ available: boolean; model?: string; reason?: string }> => {
+  const response = await apiClient.get('/api/ai/status');
+  return response.data;
+};
+
+export const testAiConnection = async (apiUrl: string, apiKey: string): Promise<{ success: boolean; models?: string[]; error?: string }> => {
+  const response = await apiClient.post('/api/ai/test', { api_url: apiUrl, api_key: apiKey });
+  return response.data;
 };
 
 // Resync message bodies (for messages synced without body content)

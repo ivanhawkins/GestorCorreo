@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getUsers, createUser, deleteUser, restoreUser, updateUserPassword, getAIConfig, updateAIConfig, getAvailableModels, type AIConfigUpdate } from '../services/api';
+import { getUsers, createUser, deleteUser, restoreUser, updateUserPassword, getAIConfig, updateAIConfig, testAiConnection, type AIConfigUpdate } from '../services/api';
 import type { User } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -61,42 +61,45 @@ const AdminDashboard: React.FC = () => {
 
     const loadAIConfig = async () => {
         try {
-            console.log('[AI Config] Loading configuration...');
             const config = await getAIConfig();
-            console.log('[AI Config] Received from API:', config);
-
-            // Set config with empty api_key for security (backend doesn't return it)
-            const newConfig = {
+            setAiConfig({
                 api_url: config.api_url || '',
                 api_key: '', // Never loaded from server for security
                 primary_model: config.primary_model || '',
                 secondary_model: config.secondary_model || ''
-            };
-
-            console.log('[AI Config] Setting state to:', newConfig);
-            setAiConfig(newConfig);
+            });
+            // Si ya hay URL configurada, mostrar los modelos guardados para que se puedan editar
+            if (config.primary_model || config.secondary_model) {
+                const saved = [config.primary_model, config.secondary_model].filter(Boolean) as string[];
+                setAvailableModels(saved);
+            }
         } catch (e: any) {
-            console.error('[AI Config] Failed to load:', e);
-            console.error('[AI Config] Error details:', e.response?.data || e.message);
             setError('No se pudo cargar la configuración de IA');
         }
     };
 
     const handleTestConnection = async () => {
         if (!aiConfig.api_url || !aiConfig.api_key) {
-            setError('Please enter both API URL and API Key');
+            setError('Introduce la URL de la API y la API Key para probar la conexión');
             return;
         }
 
         setLoadingModels(true);
         setError('');
+        setSuccessMsg('');
         try {
-            const models = await getAvailableModels();
-            setAvailableModels(models);
-            setSuccessMsg(`Connected! Found ${models.length} models`);
+            const result = await testAiConnection(aiConfig.api_url, aiConfig.api_key);
+            if (result.success && result.models && result.models.length > 0) {
+                setAvailableModels(result.models);
+                setSuccessMsg(`✅ Conexión OK. ${result.models.length} modelos encontrados.`);
+            } else if (result.success) {
+                setSuccessMsg('✅ Conexión OK, pero no se encontraron modelos. Escríbelos manualmente.');
+                setAvailableModels([aiConfig.primary_model, aiConfig.secondary_model].filter(Boolean));
+            } else {
+                setError(`❌ Error de conexión: ${result.error}`);
+            }
         } catch (e: any) {
-            setError('Failed to connect to AI API. Check URL and API Key.');
-            setAvailableModels([]);
+            setError('No se pudo conectar con la API de IA. Verifica la URL y la API Key.');
         } finally {
             setLoadingModels(false);
         }
@@ -452,55 +455,67 @@ const AdminDashboard: React.FC = () => {
                                     </button>
                                 </div>
 
-                                {availableModels.length > 0 && (
-                                    <>
-                                        <div>
-                                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Modelo Primario (GPT)</label>
-                                            <select
-                                                style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ced4da' }}
-                                                value={aiConfig.primary_model}
-                                                onChange={e => setAiConfig({ ...aiConfig, primary_model: e.target.value })}
-                                            >
-                                                <option value="">Selecciona un modelo...</option>
-                                                {availableModels.map(model => (
-                                                    <option key={model} value={model}>{model}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Modelo Primario</label>
+                                    <input
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ced4da', marginBottom: '0.4rem' }}
+                                        placeholder="Escribe o selecciona tras probar conexión..."
+                                        value={aiConfig.primary_model}
+                                        onChange={e => setAiConfig({ ...aiConfig, primary_model: e.target.value })}
+                                    />
+                                    {availableModels.length > 0 && (
+                                        <select
+                                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ced4da', fontSize: '0.85rem' }}
+                                            value={aiConfig.primary_model}
+                                            onChange={e => setAiConfig({ ...aiConfig, primary_model: e.target.value })}
+                                        >
+                                            <option value="">— Seleccionar de la lista —</option>
+                                            {availableModels.map(model => (
+                                                <option key={model} value={model}>{model}</option>
+                                            ))}
+                                        </select>
+                                    )}
+                                </div>
 
-                                        <div>
-                                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Modelo Secundario (Qwen)</label>
-                                            <select
-                                                style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ced4da' }}
-                                                value={aiConfig.secondary_model}
-                                                onChange={e => setAiConfig({ ...aiConfig, secondary_model: e.target.value })}
-                                            >
-                                                <option value="">Selecciona un modelo...</option>
-                                                {availableModels.map(model => (
-                                                    <option key={model} value={model}>{model}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Modelo Secundario</label>
+                                    <input
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: '4px', border: '1px solid #ced4da', marginBottom: '0.4rem' }}
+                                        placeholder="Escribe o selecciona tras probar conexión..."
+                                        value={aiConfig.secondary_model}
+                                        onChange={e => setAiConfig({ ...aiConfig, secondary_model: e.target.value })}
+                                    />
+                                    {availableModels.length > 0 && (
+                                        <select
+                                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ced4da', fontSize: '0.85rem' }}
+                                            value={aiConfig.secondary_model}
+                                            onChange={e => setAiConfig({ ...aiConfig, secondary_model: e.target.value })}
+                                        >
+                                            <option value="">— Seleccionar de la lista —</option>
+                                            {availableModels.map(model => (
+                                                <option key={model} value={model}>{model}</option>
+                                            ))}
+                                        </select>
+                                    )}
+                                </div>
 
-                                        <div>
-                                            <button
-                                                onClick={handleSaveAIConfig}
-                                                style={{
-                                                    padding: '0.75rem 2rem',
-                                                    backgroundColor: '#28a745',
-                                                    color: 'white',
-                                                    border: 'none',
-                                                    borderRadius: '4px',
-                                                    cursor: 'pointer',
-                                                    fontWeight: 'bold',
-                                                    fontSize: '1rem'
-                                                }}
-                                            >
-                                                💾 Guardar Configuración
-                                            </button>
-                                        </div>
-                                    </>
-                                )}
+                                <div>
+                                    <button
+                                        onClick={handleSaveAIConfig}
+                                        style={{
+                                            padding: '0.75rem 2rem',
+                                            backgroundColor: '#28a745',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            fontWeight: 'bold',
+                                            fontSize: '1rem'
+                                        }}
+                                    >
+                                        💾 Guardar Configuración
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>

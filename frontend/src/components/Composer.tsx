@@ -185,10 +185,10 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
                 attachments: attachments.length > 0 ? attachments : undefined
             })
 
-            showSuccess('Email sent successfully!')
+            showSuccess('Email enviado correctamente.')
             onClose()
         } catch (error: any) {
-            showError(error?.response?.data?.detail || 'Failed to send email')
+            showError(error?.response?.data?.error || error?.response?.data?.message || 'Error al enviar el email')
         } finally {
             setSending(false)
         }

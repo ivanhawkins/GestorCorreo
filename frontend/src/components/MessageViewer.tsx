@@ -137,7 +137,12 @@ export default function MessageViewer({ message, inline, onClose, onReply, onRep
                                 <strong>Para:</strong> {(() => {
                                     try {
                                         const tos = JSON.parse(messageDetails.to_addresses || '[]');
-                                        return Array.isArray(tos) ? tos.join(', ') : messageDetails.to_addresses;
+                                        if (Array.isArray(tos)) {
+                                            return tos.map((t: any) =>
+                                                typeof t === 'string' ? t : (t.name ? `${t.name} <${t.email}>` : t.email)
+                                            ).join(', ');
+                                        }
+                                        return messageDetails.to_addresses;
                                     } catch (e) {
                                         return messageDetails.to_addresses;
                                     }

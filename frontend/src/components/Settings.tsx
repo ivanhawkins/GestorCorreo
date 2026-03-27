@@ -2,7 +2,7 @@
  * Settings component - manage accounts and test connections
  */
 import { useState, useEffect } from 'react'
-import { useAccounts, useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory, useUpdateAccount, useDeleteAccount } from '../hooks/useApi'
+import { useAccounts, useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory, useUpdateAccount, useDeleteAccount, useClassifyPendingMessages } from '../hooks/useApi'
 import { useToast } from '../hooks/useToast'
 import { apiClient } from '../services/api'
 import './Settings.css'
@@ -59,7 +59,7 @@ function ProfileEditor({ account, onSave }: { account: any, onSave: () => void }
 function PromptEditor({ account, onSave }: { account: any, onSave: () => void }) {
     const [classificationPrompt, setClassificationPrompt] = useState(account.custom_classification_prompt || '')
     const [reviewPrompt, setReviewPrompt] = useState(account.custom_review_prompt || '')
-    const [syncInterval, setSyncInterval] = useState(account.auto_sync_interval || 0)
+    const [syncInterval, setSyncInterval] = useState(account.auto_sync_interval || 2)
     const [defaults, setDefaults] = useState<{ classification_prompt: string, review_prompt: string } | null>(null)
     const [saving, setSaving] = useState(false)
     const { showSuccess, showError } = useToast()
@@ -310,6 +310,14 @@ export default function Settings({ onClose }: SettingsProps) {
                                 </p>
                                 <CategoryManager />
                             </div>
+
+                            <div className="config-group" style={{ marginTop: '1rem', borderTop: '1px solid #444', paddingTop: '1rem' }}>
+                                <label className="config-label">Clasificación masiva</label>
+                                <p className="config-description" style={{ marginBottom: '0.75rem' }}>
+                                    Clasifica con IA todos los correos que aún no tienen categoría asignada. Puede tardar varios minutos.
+                                </p>
+                                <BulkClassifyButton />
+                            </div>
                         </div>
                     </section>
                 </div>
@@ -452,5 +460,52 @@ function CategoryManager() {
                 </button>
             )}
         </div>
+    )
+}
+
+function BulkClassifyButton() {
+    const { data: accounts } = useAccounts()
+    const classifyPending = useClassifyPendingMessages()
+    const { showSuccess, showError, showInfo } = useToast()
+    const [running, setRunning] = useState(false)
+
+    const handleClassify = async () => {
+        if (!accounts || accounts.length === 0) return
+        if (!confirm('Esto clasificará con IA todos los correos pendientes de todas las cuentas. Puede tardar varios minutos. ¿Continuar?')) return
+
+        setRunning(true)
+        showInfo('Clasificando correos pendientes...')
+
+        let total = 0
+        for (const account of accounts) {
+            try {
+                const result = await classifyPending.mutateAsync(account.id)
+                total += result.classified ?? 0
+            } catch (e) {
+                // continuar con la siguiente cuenta
+            }
+        }
+
+        setRunning(false)
+        showSuccess(`Clasificación completada: ${total} correos clasificados.`)
+    }
+
+    return (
+        <button
+            onClick={handleClassify}
+            disabled={running}
+            style={{
+                padding: '8px 16px',
+                background: running ? '#555' : 'linear-gradient(135deg, #667eea, #764ba2)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: running ? 'not-allowed' : 'pointer',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+            }}
+        >
+            {running ? '⏳ Clasificando...' : '🤖 Clasificar correos pendientes'}
+        </button>
     )
 }

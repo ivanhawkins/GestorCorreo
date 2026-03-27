@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import '../App.css'
 import { useAccounts, useMessages, useBulkMarkAsRead, useCategories, streamSync, useEmptyFolder, useDeleteAccount, useRestoreAccount, useToggleStar, useUpdateClassification, useDeleteMessage, useClassifyPendingMessages } from '../hooks/useApi'
-import { useQueryClient } from '@tanstack/react-query'
-import { resyncMessageBodies, resyncMessageAttachments } from '../services/api'
+import { useQueryClient, useQuery } from '@tanstack/react-query'
+import { resyncMessageBodies, resyncMessageAttachments, getAiStatus } from '../services/api'
 import type { Message, MessageDetail } from '../services/api'
 
 import AccountManager from '../components/AccountManager'
@@ -46,6 +46,14 @@ const Dashboard: React.FC = () => {
     } | null>(null)
 
     const { toasts, removeToast, showSuccess, showError, showInfo } = useToast()
+
+    // AI Status (poll every 60s)
+    const { data: aiStatus } = useQuery({
+        queryKey: ['aiStatus'],
+        queryFn: getAiStatus,
+        refetchInterval: 60000,
+        retry: false,
+    })
 
     // Accounts queries
     const { data: accounts, isLoading: accountsLoading } = useAccounts(false)
@@ -198,7 +206,12 @@ const Dashboard: React.FC = () => {
             },
             (data) => {
                 // Parse incoming events
-                if (data.status === 'found_messages') {
+                if (data.status === 'connecting') {
+                    setSyncState(prev => ({
+                        ...prev!,
+                        download: { ...prev!.download, message: data.message || 'Conectando...' }
+                    }))
+                } else if (data.status === 'found_messages') {
                     setSyncState(prev => ({
                         ...prev!,
                         download: {
@@ -229,9 +242,8 @@ const Dashboard: React.FC = () => {
                             message: data.message || 'Analizando...'
                         }
                     }))
-                } else if (data.status === 'complete') {
-                    const result = data.sync_result
-                    const newCount = result?.new_messages || 0
+                } else if (data.status === 'complete' || data.status === 'success') {
+                    const newCount = data.new_messages ?? data.sync_result?.new_messages ?? 0
                     const classified = data.classified_count || 0
 
                     setSyncState(prev => ({
@@ -239,10 +251,10 @@ const Dashboard: React.FC = () => {
                         classify: { ...prev!.classify, status: 'complete', current: classified, total: classified }
                     }))
 
-                    if (classified > 0) {
-                        showSuccess(`Sincronizados ${newCount} mensajes y clasificados ${classified}`)
+                    if (newCount > 0) {
+                        showSuccess(`${newCount} nuevos mensajes sincronizados`)
                     } else {
-                        showSuccess(`Sincronizados ${newCount} nuevos mensajes`)
+                        showSuccess('Bandeja al día, no hay mensajes nuevos')
                     }
 
                     // Refresh ALL messages data (counts and list)
@@ -250,7 +262,7 @@ const Dashboard: React.FC = () => {
                     queryClient.invalidateQueries({ queryKey: ['accounts'] })
 
                     // Auto close after 3 seconds
-                    setTimeout(() => setSyncState(null), 5000)
+                    setTimeout(() => setSyncState(null), 3000)
 
                 } else if (data.status === 'error') {
                     showError(data.error || 'Fallo en sincronización')
@@ -473,7 +485,21 @@ const Dashboard: React.FC = () => {
                 <div className="sidebar-header">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                         <h2>📧 Hawkins <span style={{ fontSize: '0.6rem', color: '#aaa', fontWeight: 'normal', verticalAlign: 'middle' }}>v.04</span></h2>
-                        {user?.is_admin && <button onClick={() => navigate('/admin')} style={{ fontSize: '0.8rem', padding: '0.2rem', cursor: 'pointer' }} title="Admin Area">🔑</button>}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span
+                                title={aiStatus?.available ? `IA activa: ${aiStatus.model}` : `IA no disponible${aiStatus?.reason ? ': ' + aiStatus.reason : ''}`}
+                                style={{
+                                    display: 'inline-block',
+                                    width: 10, height: 10,
+                                    borderRadius: '50%',
+                                    background: aiStatus === undefined ? '#888' : aiStatus.available ? '#22c55e' : '#ef4444',
+                                    boxShadow: aiStatus?.available ? '0 0 6px #22c55e' : undefined,
+                                    cursor: 'help',
+                                    flexShrink: 0,
+                                }}
+                            />
+                            {user?.is_admin && <button onClick={() => navigate('/admin')} style={{ fontSize: '0.8rem', padding: '0.2rem', cursor: 'pointer' }} title="Admin Area">🔑</button>}
+                        </div>
                     </div>
                     <div style={{ fontSize: '0.8rem', color: '#888', marginBottom: '0.5rem' }}>
                         User: {user?.username} <button onClick={logout} style={{ border: 'none', background: 'none', color: 'blue', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Logout</button>
@@ -641,11 +667,16 @@ const Dashboard: React.FC = () => {
                     <h2>{getCategoryTitle()}</h2>
                     <div className="toolbar-actions">
                         <button
-                            className="btn-secondary"
+                            className="btn-compose"
                             onClick={handleNewEmail}
                             disabled={!selectedAccount}
+                            title="Redactar nuevo correo"
                         >
-                            ✉️ Redactar
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+                                <path d="M12 20h9"/>
+                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                            </svg>
+                            Redactar
                         </button>
                         <button
                             className="btn-toolbar"
@@ -669,30 +700,6 @@ const Dashboard: React.FC = () => {
                             disabled={!selectedAccount || (syncState !== null)}
                         >
                             {syncState ? '🔄 Sincronizando...' : '🔄 Sincronizar'}
-                        </button>
-                        <button
-                            className="btn-toolbar"
-                            onClick={handleResyncBodies}
-                            disabled={!selectedAccount || isResyncingBodies}
-                            title="Recuperar el cuerpo de correos que aparecen sin contenido"
-                        >
-                            {isResyncingBodies ? '⏳ Recuperando...' : '♻️ Recuperar Contenido'}
-                        </button>
-                        <button
-                            className="btn-toolbar"
-                            onClick={handleResyncAttachments}
-                            disabled={!selectedAccount || isResyncingAttachments}
-                            title="Recuperar adjuntos de correos que los tienen pendientes"
-                        >
-                            {isResyncingAttachments ? '⏳ Recuperando...' : '📎 Recuperar Adjuntos'}
-                        </button>
-                        <button
-                            className="btn-toolbar"
-                            onClick={handleClassifyPending}
-                            disabled={!selectedAccount || isClassifyingPending}
-                            title="Fuerza a la IA a analizar todos los correos que falten por clasificar"
-                        >
-                            {isClassifyingPending ? '⏳ Analizando...' : '🤖 Clasificar Pendientes'}
                         </button>
                     </div>
                 </div>
