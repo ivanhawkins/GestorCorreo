@@ -1,0 +1,11 @@
+Reporting-MTA: dns;AS8P195MB1846.EURP195.PROD.OUTLOOK.COM
+Received-From-MTA: dns;AM0PR02CU008.outbound.protection.outlook.com
+Arrival-Date: Fri, 13 Mar 2026 11:39:08 +0000
+
+Final-Recipient: rfc822;comercial@alcaidesa.com
+Action: failed
+Status: 5.4.14
+Diagnostic-Code: smtp;554 5.4.14 Hop count exceeded - possible mail loop ATTR34 [DB1PEPF00039233.eurprd03.prod.outlook.com 2026-03-13T11:39:10.529Z 08DE80823C99B7BF]
+Remote-MTA: dns;DB1PEPF00039233.mail.protection.outlook.com
+X-Display-Name: comercial@alcaidesa.com
+

@@ -1,0 +1,6 @@
+
+> frontend@0.0.0 build
+> tsc -b && vite build
+
+"tsc" no se reconoce como un comando interno o externo,
+programa o archivo por lotes ejecutable.

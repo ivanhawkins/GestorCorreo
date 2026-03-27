@@ -1,71 +1,21 @@
-# ──────────────────────────────────────────
-# Dependencias (se instalan en el servidor)
-# ──────────────────────────────────────────
-node_modules/
-__pycache__/
-*.pyc
-.venv/
-venv/
-env/
-laravel-backend/vendor/
-
-# ──────────────────────────────────────────
-# Build outputs del frontend
-# ──────────────────────────────────────────
-frontend/dist/
-frontend/build/
-frontend/build_errors*.txt
-frontend/build_output*.txt
-frontend/build_prod*.txt
-frontend/build_final*.txt
-frontend/dev.log
-dist/
-build/
-*.egg-info/
-
-# ──────────────────────────────────────────
-# Bases de datos y datos locales
-# ──────────────────────────────────────────
-data/
-*.db
-*.sqlite
-*.sqlite3
-
-# ──────────────────────────────────────────
-# Variables de entorno (NUNCA en git)
-# ──────────────────────────────────────────
+/vendor/
+/node_modules/
+/public/build/
+/public/hot/
+/public/storage
+/storage/app/pop3_cache/
+/storage/*.key
+/storage/logs/
 .env
-.env.local
-.env.*.local
-
-# ──────────────────────────────────────────
-# Logs y archivos temporales de debug
-# ──────────────────────────────────────────
-*.log
-logs/
-laravel-backend/storage/logs/
-check_log.txt
-debug_sync.txt
-
-# ──────────────────────────────────────────
-# Cache POP3
-# ──────────────────────────────────────────
-laravel-backend/storage/app/pop3_cache/
-
-# ──────────────────────────────────────────
-# IDE y SO
-# ──────────────────────────────────────────
-.vscode/
-.idea/
+.env.backup
+.env.production
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+auth.json
+npm-debug.log
+yarn-error.log
+/.idea
+/.vscode
 *.swp
 *.swo
-.DS_Store
-Thumbs.db
-
-# ──────────────────────────────────────────
-# Claude Code (configuración local)
-# ──────────────────────────────────────────
-.claude/settings.local.json
-
-# Tauri
-src-tauri/target/
