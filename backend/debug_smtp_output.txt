@@ -1,0 +1,7 @@
+Account: ivan@hawkins.es
+IMAP: imap.hawkins.es:993
+SMTP: smtp.hawkins.es:587
+Password decrypted.
+Testing with host: smtp.ionos.es:465
+Attempting to send email...
+Result: {'status': 'success', 'message': 'Email sent to 1 recipients'}

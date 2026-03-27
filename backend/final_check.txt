@@ -1,0 +1,2 @@
+Tables: [('users',), ('audit_logs',), ('ai_config',), ('accounts',), ('service_whitelist',), ('sender_rules',), ('categories',), ('messages',), ('attachments',), ('classifications',)]
+Users: [(1, 'admin', 1)]
