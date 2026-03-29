@@ -15,6 +15,10 @@ RUN apk add --no-cache \
     oniguruma-dev \
     libzip-dev \
     ca-certificates \
+    autoconf \
+    gcc \
+    g++ \
+    make \
     && docker-php-ext-install \
         pdo \
         pdo_mysql \
