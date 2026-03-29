@@ -50,4 +50,8 @@ RUN chmod +x /start.sh
 
 EXPOSE 8080
 
+# Healthcheck: espera hasta 3 minutos (migraciones pueden tardar)
+HEALTHCHECK --interval=15s --timeout=10s --start-period=180s --retries=5 \
+    CMD curl -f http://localhost:8080/api/health || exit 1
+
 CMD ["/start.sh"]
