@@ -12,6 +12,9 @@ class Pop3Service
     private $account;
     private string $password;
 
+    /** @var array Últimos errores/alertas de imap tras un connect() fallido */
+    private array $lastErrors = [];
+
     public function __construct($account, string $password)
     {
         $this->account  = $account;
@@ -65,8 +68,9 @@ class Pop3Service
             );
 
             if ($this->connection === false) {
-                $errors = imap_errors();
-                $alerts = imap_alerts();
+                $errors = imap_errors() ?: [];
+                $alerts = imap_alerts() ?: [];
+                $this->lastErrors = array_merge($errors, $alerts);
                 Log::error('Pop3Service: Error de conexión', [
                     'account' => $this->account->email_address,
                     'mailbox' => $mailbox,
@@ -84,6 +88,7 @@ class Pop3Service
 
             return true;
         } catch (\Throwable $e) {
+            $this->lastErrors = [$e->getMessage()];
             Log::error('Pop3Service: Excepción en connect()', [
                 'account' => $this->account->email_address ?? 'unknown',
                 'error'   => $e->getMessage(),
@@ -91,6 +96,12 @@ class Pop3Service
             ]);
             return false;
         }
+    }
+
+    /** Devuelve los últimos errores de imap tras un connect() fallido. */
+    public function getLastErrors(): array
+    {
+        return $this->lastErrors;
     }
 
     /**

@@ -233,7 +233,12 @@ class AccountController extends Controller
                         'message_count'  => $count,
                     ]);
                 }
-                return response()->json(['success' => false, 'error' => 'No se pudo conectar al servidor POP3.'], 422);
+                return response()->json([
+                    'success'        => false,
+                    'error'          => 'No se pudo conectar al servidor POP3.',
+                    'details'        => $service->getLastErrors(),
+                    'imap_available' => function_exists('imap_open'),
+                ], 422);
             } else {
                 $service = new ImapService($account, $password);
                 $connected = $service->connect(1); // 1 reintento para test
