@@ -97,7 +97,7 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
         files.forEach(file => {
             // Limit file size to 10MB
             if (file.size > 10 * 1024 * 1024) {
-                showError(`File ${file.name} is too large (max 10MB)`)
+                showError(`El archivo ${file.name} es demasiado grande (máximo 10 MB)`)
                 return
             }
 
@@ -111,7 +111,7 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
                 }])
             }
             reader.onerror = () => {
-                showError(`Failed to read file ${file.name}`)
+                showError(`No se pudo leer el archivo ${file.name}`)
             }
             reader.readAsDataURL(file)
         })
@@ -128,7 +128,7 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
         if (!originalMessage) return
 
         setGenerating(true)
-        showInfo('Generating AI response...')
+        showInfo('Generando respuesta con IA...')
 
         try {
             // Find current account to get the profile
@@ -149,7 +149,7 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
             if (response.data.reply_body) {
                 // Append to current body
                 setBody(prev => prev + '\n' + response.data.reply_body)
-                showSuccess('AI Reply Generated!')
+                showSuccess('¡Respuesta generada con IA!')
                 setAiIntent('') // Clear intent after generation
             }
         } catch (error) {
@@ -164,7 +164,7 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
         e.preventDefault()
 
         if (!to.trim()) {
-            showError('Please enter at least one recipient')
+            showError('Por favor, introduce al menos un destinatario')
             return
         }
 
@@ -196,10 +196,10 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
 
     const getTitle = () => {
         switch (mode) {
-            case 'reply': return '↩️ Reply'
-            case 'reply_all': return '⏮️ Reply All'
-            case 'forward': return '➡️ Forward'
-            default: return '✉️ Compose Email'
+            case 'reply': return '↩️ Responder'
+            case 'reply_all': return '⏮️ Responder a todos'
+            case 'forward': return '➡️ Reenviar'
+            default: return '✉️ Nuevo correo'
         }
     }
 
@@ -213,7 +213,7 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
 
                 <form onSubmit={handleSend} className="composer-form">
                     <div className="form-group">
-                        <label>From Account</label>
+                        <label>Cuenta de origen</label>
                         <select
                             value={accountId}
                             onChange={(e) => setAccountId(Number(e.target.value))}
@@ -228,60 +228,60 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
                     </div>
 
                     <div className="form-group">
-                        <label>To</label>
+                        <label>Para</label>
                         <input
                             type="text"
                             value={to}
                             onChange={(e) => setTo(e.target.value)}
-                            placeholder="recipient@example.com, another@example.com"
+                            placeholder="destinatario@ejemplo.com, otro@ejemplo.com"
                             required
                         />
                     </div>
 
                     <div className="form-group">
-                        <label>Cc (optional)</label>
+                        <label>Cc (opcional)</label>
                         <input
                             type="text"
                             value={cc}
                             onChange={(e) => setCc(e.target.value)}
-                            placeholder="cc@example.com"
+                            placeholder="cc@ejemplo.com"
                         />
                     </div>
 
                     <div className="form-group">
-                        <label>Bcc (optional)</label>
+                        <label>Cco (opcional)</label>
                         <input
                             type="text"
                             value={bcc}
                             onChange={(e) => setBcc(e.target.value)}
-                            placeholder="bcc@example.com"
+                            placeholder="cco@ejemplo.com"
                         />
                     </div>
 
                     <div className="form-group">
-                        <label>Subject</label>
+                        <label>Asunto</label>
                         <input
                             type="text"
                             value={subject}
                             onChange={(e) => setSubject(e.target.value)}
-                            placeholder="Email subject"
+                            placeholder="Asunto del correo"
                             required
                         />
                     </div>
 
                     <div className="form-group message-container">
-                        <label>Message</label>
+                        <label>Mensaje</label>
                         <textarea
                             value={body}
                             onChange={(e) => setBody(e.target.value)}
-                            placeholder="Write your message here..."
+                            placeholder="Escribe tu mensaje aquí..."
                             rows={12}
                             required
                         />
                     </div>
 
                     <div className="form-group">
-                        <label>Attachments</label>
+                        <label>Archivos adjuntos</label>
                         <input
                             type="file"
                             onChange={handleFileSelect}
@@ -332,10 +332,10 @@ export default function Composer({ onClose, mode = 'new', originalMessage }: Com
                         )}
 
                         <button type="button" onClick={onClose} className="btn-secondary">
-                            Cancel
+                            Cancelar
                         </button>
                         <button type="submit" className="btn-primary" disabled={sending}>
-                            {sending ? '📤 Sending...' : '📨 Send'}
+                            {sending ? '📤 Enviando...' : '📨 Enviar'}
                         </button>
                     </div>
                 </form>

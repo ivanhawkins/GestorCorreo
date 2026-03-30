@@ -47,6 +47,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/accounts/{id}/test-connection', [App\Http\Controllers\AccountController::class, 'testConnection']);
     Route::post('/accounts/{id}/restore',         [App\Http\Controllers\AccountController::class, 'restore']);
 
+    // Admin: gestión de cuentas de todos los usuarios (solo admin)
+    Route::get('/admin/accounts',        [App\Http\Controllers\AccountController::class, 'indexAdmin']);
+    Route::post('/admin/accounts',       [App\Http\Controllers\AccountController::class, 'storeForUser']);
+    Route::delete('/admin/accounts/{id}', [App\Http\Controllers\AccountController::class, 'destroyAdmin']);
+
     // Messages
     Route::get('/messages',                       [App\Http\Controllers\MessageController::class, 'index']);
     Route::get('/messages/{id}',                  [App\Http\Controllers\MessageController::class, 'show']);

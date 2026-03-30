@@ -36,6 +36,7 @@ export const healthCheck = async () => {
 // Accounts
 export interface Account {
   id: number;
+  user_id: number;
   email_address: string;
   imap_host: string;
   imap_port: number;
@@ -121,6 +122,34 @@ export const createAccount = async (data: AccountCreate): Promise<Account> => {
 export const updateAccount = async (id: number, data: Partial<AccountCreate> & { auto_classify?: boolean }): Promise<Account> => {
   const response = await apiClient.put(`/api/accounts/${id}`, data);
   return response.data;
+};
+
+export const testAccountConnection = async (id: number): Promise<{ success: boolean; message?: string; error?: string; folders?: string[] }> => {
+  const response = await apiClient.post(`/api/accounts/${id}/test-connection`);
+  return response.data;
+};
+
+// --- Admin: gestión de cuentas ---
+export interface AccountWithUser extends Account {
+  user?: { id: number; username: string };
+}
+
+export const getAdminAccounts = async (deleted: boolean = false): Promise<AccountWithUser[]> => {
+  const response = await apiClient.get('/api/admin/accounts', { params: { deleted } });
+  return response.data;
+};
+
+export interface AdminAccountCreate extends AccountCreate {
+  user_id: number;
+}
+
+export const createAccountForUser = async (data: AdminAccountCreate): Promise<Account> => {
+  const response = await apiClient.post('/api/admin/accounts', data);
+  return response.data.account;
+};
+
+export const deleteAdminAccount = async (id: number) => {
+  await apiClient.delete(`/api/admin/accounts/${id}`);
 };
 
 export const getMessages = async (params?: {

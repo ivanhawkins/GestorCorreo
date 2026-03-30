@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getUsers, createUser, deleteUser, restoreUser, updateUserPassword, getAIConfig, updateAIConfig, testAiConnection, type AIConfigUpdate } from '../services/api';
+import { getUsers, createUser, deleteUser, restoreUser, updateUserPassword, getAIConfig, updateAIConfig, testAiConnection, getAdminAccounts, createAccountForUser, deleteAdminAccount, testAccountConnection, type AIConfigUpdate, type AccountWithUser, type AdminAccountCreate } from '../services/api';
 import type { User } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -18,7 +18,7 @@ const AdminDashboard: React.FC = () => {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
     const [view, setView] = useState<'active' | 'deleted'>('active');
-    const [tab, setTab] = useState<'users' | 'ai-config'>('users');
+    const [tab, setTab] = useState<'users' | 'ai-config' | 'accounts'>('users');
     const [newUserValues, setNewUserValues] = useState({ username: '', password: '', is_admin: false });
     const { user, logout } = useAuth();
     const navigate = useNavigate();
@@ -31,6 +31,24 @@ const AdminDashboard: React.FC = () => {
     const [availableModels, setAvailableModels] = useState<string[]>([]);
     const [loadingModels, setLoadingModels] = useState(false);
 
+    // Cuentas de correo state
+    const [allAccounts, setAllAccounts] = useState<AccountWithUser[]>([]);
+    const [loadingAccounts, setLoadingAccounts] = useState(false);
+    const [selectedUserId, setSelectedUserId] = useState<number>(0);
+    const [testingAccountId, setTestingAccountId] = useState<number | null>(null);
+    const [showNewAccountForm, setShowNewAccountForm] = useState(false);
+    const [newAccount, setNewAccount] = useState<AdminAccountCreate>({
+        user_id: 0,
+        email_address: '',
+        imap_host: 'imap.ionos.es',
+        imap_port: 993,
+        smtp_host: 'smtp.ionos.es',
+        smtp_port: 587,
+        username: '',
+        password: '',
+        protocol: 'imap',
+    });
+
     useEffect(() => {
         if (user && !user.is_admin) {
             navigate('/');
@@ -38,6 +56,9 @@ const AdminDashboard: React.FC = () => {
             loadUsers();
             if (tab === 'ai-config') {
                 loadAIConfig();
+            }
+            if (tab === 'accounts') {
+                loadAccounts();
             }
         }
     }, [user, navigate, tab]);
@@ -75,6 +96,72 @@ const AdminDashboard: React.FC = () => {
             }
         } catch (e: any) {
             setError('No se pudo cargar la configuración de IA');
+        }
+    };
+
+    const loadAccounts = async () => {
+        setLoadingAccounts(true);
+        try {
+            const data = await getAdminAccounts();
+            setAllAccounts(data);
+        } catch (e) {
+            setError('No se pudieron cargar las cuentas de correo');
+        } finally {
+            setLoadingAccounts(false);
+        }
+    };
+
+    const handleCreateAccount = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+        setSuccessMsg('');
+        try {
+            await createAccountForUser({ ...newAccount, user_id: newAccount.user_id || selectedUserId });
+            setSuccessMsg('Cuenta de correo creada correctamente');
+            setShowNewAccountForm(false);
+            setNewAccount({
+                user_id: 0,
+                email_address: '',
+                imap_host: 'imap.ionos.es',
+                imap_port: 993,
+                smtp_host: 'smtp.ionos.es',
+                smtp_port: 587,
+                username: '',
+                password: '',
+                protocol: 'imap',
+            });
+            loadAccounts();
+        } catch (e: any) {
+            setError(e.response?.data?.message || 'Error al crear la cuenta');
+        }
+    };
+
+    const handleDeleteAccount = async (id: number) => {
+        if (!confirm('¿Eliminar esta cuenta de correo?')) return;
+        try {
+            await deleteAdminAccount(id);
+            setSuccessMsg('Cuenta eliminada');
+            loadAccounts();
+        } catch (e) {
+            setError('Error al eliminar la cuenta');
+        }
+    };
+
+    const handleTestAccount = async (id: number) => {
+        setTestingAccountId(id);
+        setError('');
+        setSuccessMsg('');
+        try {
+            const result = await testAccountConnection(id);
+            if (result.success) {
+                setSuccessMsg(`✅ Conexión OK: ${result.message || 'Servidor accesible'}`);
+            } else {
+                setError(`❌ Error de conexión: ${result.error}`);
+            }
+        } catch (e: any) {
+            setError('No se pudo probar la conexión');
+        } finally {
+            setTestingAccountId(null);
         }
     };
 
@@ -237,6 +324,20 @@ const AdminDashboard: React.FC = () => {
                         }}
                     >
                         Configuración IA
+                    </button>
+                    <button
+                        onClick={() => setTab('accounts')}
+                        style={{
+                            padding: '1rem 2rem',
+                            border: 'none',
+                            background: tab === 'accounts' ? '#007bff' : 'transparent',
+                            color: tab === 'accounts' ? 'white' : '#495057',
+                            fontWeight: tab === 'accounts' ? 'bold' : 'normal',
+                            borderBottom: tab === 'accounts' ? '3px solid #007bff' : 'none',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        Cuentas de Correo
                     </button>
                 </div>
             </div>
@@ -521,6 +622,199 @@ const AdminDashboard: React.FC = () => {
                     </div>
                 )
             }
+
+            {/* Accounts Tab */}
+            {tab === 'accounts' && (
+                <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <h2 style={{ margin: 0 }}>Cuentas de Correo por Usuario</h2>
+                        <button
+                            onClick={() => { setShowNewAccountForm(!showNewAccountForm); setError(''); setSuccessMsg(''); }}
+                            style={{ padding: '0.5rem 1rem', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                        >
+                            {showNewAccountForm ? 'Cancelar' : '+ Nueva Cuenta'}
+                        </button>
+                    </div>
+
+                    {/* Formulario nueva cuenta */}
+                    {showNewAccountForm && (
+                        <div style={{ backgroundColor: '#f8f9fa', padding: '1.5rem', borderRadius: '8px', marginBottom: '2rem', border: '1px solid #dee2e6' }}>
+                            <h3 style={{ marginTop: 0 }}>Nueva cuenta IONOS</h3>
+                            <form onSubmit={handleCreateAccount}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 'bold' }}>Usuario</label>
+                                        <select
+                                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                                            value={newAccount.user_id}
+                                            onChange={e => setNewAccount({ ...newAccount, user_id: Number(e.target.value) })}
+                                            required
+                                        >
+                                            <option value={0}>— Seleccionar usuario —</option>
+                                            {users.map(u => (
+                                                <option key={u.id} value={u.id}>{u.username}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 'bold' }}>Email de IONOS</label>
+                                        <input
+                                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                                            type="email"
+                                            placeholder="usuario@dominio.com"
+                                            value={newAccount.email_address}
+                                            onChange={e => setNewAccount({ ...newAccount, email_address: e.target.value, username: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 'bold' }}>Contraseña</label>
+                                        <input
+                                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                                            type="password"
+                                            placeholder="Contraseña del correo"
+                                            value={newAccount.password}
+                                            onChange={e => setNewAccount({ ...newAccount, password: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 'bold' }}>Protocolo</label>
+                                        <select
+                                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                                            value={newAccount.protocol}
+                                            onChange={e => setNewAccount({ ...newAccount, protocol: e.target.value as 'imap' | 'pop3' })}
+                                        >
+                                            <option value="imap">IMAP</option>
+                                            <option value="pop3">POP3</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 'bold' }}>Servidor IMAP</label>
+                                        <input
+                                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                                            value={newAccount.imap_host}
+                                            onChange={e => setNewAccount({ ...newAccount, imap_host: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 'bold' }}>Puerto IMAP</label>
+                                        <input
+                                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                                            type="number"
+                                            value={newAccount.imap_port}
+                                            onChange={e => setNewAccount({ ...newAccount, imap_port: Number(e.target.value) })}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 'bold' }}>Servidor SMTP</label>
+                                        <input
+                                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                                            value={newAccount.smtp_host}
+                                            onChange={e => setNewAccount({ ...newAccount, smtp_host: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 'bold' }}>Puerto SMTP</label>
+                                        <input
+                                            style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                                            type="number"
+                                            value={newAccount.smtp_port}
+                                            onChange={e => setNewAccount({ ...newAccount, smtp_port: Number(e.target.value) })}
+                                            required
+                                        />
+                                    </div>
+                                </div>
+                                <div style={{ marginTop: '1rem' }}>
+                                    <button type="submit" style={{ padding: '0.75rem 2rem', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                                        Crear Cuenta
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* Filtro por usuario */}
+                    <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <label style={{ fontWeight: 'bold' }}>Filtrar por usuario:</label>
+                        <select
+                            style={{ padding: '0.5rem', borderRadius: '4px', border: '1px solid #ced4da' }}
+                            value={selectedUserId}
+                            onChange={e => setSelectedUserId(Number(e.target.value))}
+                        >
+                            <option value={0}>Todos los usuarios</option>
+                            {users.map(u => (
+                                <option key={u.id} value={u.id}>{u.username}</option>
+                            ))}
+                        </select>
+                        <button onClick={loadAccounts} style={{ padding: '0.5rem 1rem', border: '1px solid #6c757d', borderRadius: '4px', cursor: 'pointer', background: 'white' }}>
+                            🔄 Actualizar
+                        </button>
+                    </div>
+
+                    {/* Tabla de cuentas */}
+                    {loadingAccounts ? (
+                        <div style={{ padding: '2rem', textAlign: 'center', color: '#666' }}>Cargando cuentas...</div>
+                    ) : (
+                        <div style={{ border: '1px solid #dee2e6', borderRadius: '4px' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead>
+                                    <tr style={{ backgroundColor: '#e9ecef', textAlign: 'left' }}>
+                                        <th style={{ padding: '0.75rem', borderBottom: '1px solid #dee2e6' }}>Usuario</th>
+                                        <th style={{ padding: '0.75rem', borderBottom: '1px solid #dee2e6' }}>Email</th>
+                                        <th style={{ padding: '0.75rem', borderBottom: '1px solid #dee2e6' }}>Servidor IMAP</th>
+                                        <th style={{ padding: '0.75rem', borderBottom: '1px solid #dee2e6' }}>Proto.</th>
+                                        <th style={{ padding: '0.75rem', borderBottom: '1px solid #dee2e6' }}>Estado</th>
+                                        <th style={{ padding: '0.75rem', borderBottom: '1px solid #dee2e6' }}>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {allAccounts
+                                        .filter(a => selectedUserId === 0 || a.user_id === selectedUserId)
+                                        .map(account => (
+                                            <tr key={account.id} style={{ borderBottom: '1px solid #dee2e6' }}>
+                                                <td style={{ padding: '0.75rem' }}>{account.user?.username || `ID ${account.user_id}`}</td>
+                                                <td style={{ padding: '0.75rem' }}>{account.email_address}</td>
+                                                <td style={{ padding: '0.75rem', color: '#666', fontSize: '0.875rem' }}>{account.imap_host}:{account.imap_port}</td>
+                                                <td style={{ padding: '0.75rem' }}><span style={{ textTransform: 'uppercase', fontSize: '0.8rem', backgroundColor: '#e9ecef', padding: '2px 6px', borderRadius: '3px' }}>{account.protocol}</span></td>
+                                                <td style={{ padding: '0.75rem' }}>
+                                                    <span style={{ color: account.is_active ? 'green' : '#dc3545' }}>
+                                                        {account.is_active ? 'Activa' : 'Inactiva'}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '0.75rem', display: 'flex', gap: '5px' }}>
+                                                    <button
+                                                        onClick={() => handleTestAccount(account.id)}
+                                                        disabled={testingAccountId === account.id}
+                                                        style={{ padding: '4px 8px', background: '#fff', border: '1px solid #17a2b8', color: '#17a2b8', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}
+                                                    >
+                                                        {testingAccountId === account.id ? '⏳' : '🔌 Probar'}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteAccount(account.id)}
+                                                        style={{ padding: '4px 8px', background: '#fff', border: '1px solid #dc3545', color: '#dc3545', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}
+                                                    >
+                                                        🗑️
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    {allAccounts.filter(a => selectedUserId === 0 || a.user_id === selectedUserId).length === 0 && (
+                                        <tr>
+                                            <td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: '#666' }}>
+                                                No hay cuentas de correo configuradas.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
 
         </div>
     );

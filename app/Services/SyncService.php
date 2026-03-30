@@ -96,6 +96,9 @@ class SyncService
             $cachedUids    = $cacheData['uids']       ?? [];
             $lastMsgCount  = $cacheData['last_count'] ?? 0;
 
+            // Mapa hash para búsqueda O(1) en lugar de in_array O(n)
+            $cachedUidsMap = array_flip($cachedUids);
+
             // Obtener total actual del servidor
             $currentCount = $pop3->getMessageCount();
 
@@ -130,7 +133,7 @@ class SyncService
                     ? $ovMessageId
                     : $account->imap_host . '_' . $msgNum . '_' . ($ov->size ?? 0);
 
-                if (in_array($uid, $cachedUids, true)) {
+                if (isset($cachedUidsMap[$uid])) {
                     continue;
                 }
 
@@ -141,7 +144,7 @@ class SyncService
                             ->where('account_id', $account->id)
                             ->exists();
                         if ($alreadyInDb) {
-                            $cachedUids[] = $uid;
+                            $cachedUidsMap[$uid] = 1;
                             continue;
                         }
                     }
@@ -190,7 +193,7 @@ class SyncService
                             'is_starred'     => false,
                             'created_at'     => now(),
                         ]);
-                        $cachedUids[]    = $uid;
+                        $cachedUidsMap[$uid] = 1;
                         $newMessageIds[] = $messageId;
                         $newMessages++;
                         continue;
@@ -233,7 +236,7 @@ class SyncService
                         $this->classificationService->classifyMessage($message, $account);
                     }
 
-                    $cachedUids[]    = $uid;
+                    $cachedUidsMap[$uid] = 1;
                     $newMessageIds[] = $messageId;
                     $newMessages++;
                 } catch (\Throwable $e) {
@@ -246,7 +249,7 @@ class SyncService
 
             // Guardar cache actualizada con last_count para optimizar próximas syncs
             Storage::put($cacheFile, json_encode([
-                'uids'       => array_values(array_unique($cachedUids)),
+                'uids'       => array_keys($cachedUidsMap),
                 'last_count' => $currentCount,
             ]));
 
@@ -284,6 +287,9 @@ class SyncService
      */
     public function syncImap(Account $account, string $password): array
     {
+        // Ampliar límite de ejecución para sincronizaciones largas
+        set_time_limit(600);
+
         $newMessages   = 0;
         $newMessageIds = [];
 
@@ -304,8 +310,19 @@ class SyncService
                 ->whereNotNull('imap_uid')
                 ->max('imap_uid');
 
+            $isFirstSync = ($lastUid === 0 && Message::where('account_id', $account->id)->doesntExist());
+            $today       = Carbon::today();
+
             // Obtener UIDs nuevos
             $newUids = $imap->getNewMessageUids($lastUid);
+
+            // Pre-cargar message_ids existentes en BD (una sola query) para evitar N+1
+            $existingMessageIds = Message::where('account_id', $account->id)
+                ->whereNotNull('message_id')
+                ->where('message_id', '!=', '')
+                ->pluck('message_id')
+                ->flip()
+                ->all();
 
             foreach ($newUids as $uid) {
                 try {
@@ -316,15 +333,50 @@ class SyncService
                         continue;
                     }
 
-                    // Check duplicado por message_id
-                    if ($headers['message_id']) {
-                        $alreadyInDb = Message::where('message_id', $headers['message_id'])
-                            ->where('account_id', $account->id)
-                            ->exists();
+                    // Check duplicado por message_id usando el mapa en memoria (sin query extra)
+                    if ($headers['message_id'] && isset($existingMessageIds[$headers['message_id']])) {
+                        continue;
+                    }
 
-                        if ($alreadyInDb) {
-                            continue;
+                    // Primera sync: emails antiguos se guardan sin body para acelerar
+                    $isOldEmail = false;
+                    if ($isFirstSync) {
+                        try {
+                            $emailDate = !empty($headers['date']) ? Carbon::parse($headers['date']) : null;
+                            if ($emailDate && $emailDate->lt($today)) {
+                                $isOldEmail = true;
+                            }
+                        } catch (\Throwable) {}
+                    }
+
+                    if ($isOldEmail) {
+                        $messageId = (string) Str::uuid();
+                        Message::create([
+                            'id'              => $messageId,
+                            'account_id'      => $account->id,
+                            'imap_uid'        => $uid,
+                            'message_id'      => $headers['message_id'] ?? '',
+                            'subject'         => $headers['subject']    ?? '',
+                            'from_name'       => $headers['from_name']  ?? '',
+                            'from_email'      => $headers['from_email'] ?? '',
+                            'to_addresses'    => $headers['to_addresses'] ?? '[]',
+                            'cc_addresses'    => $headers['cc_addresses'] ?? '[]',
+                            'date'            => $headers['date'] ?? now(),
+                            'snippet'         => '',
+                            'folder'          => 'INBOX',
+                            'body_text'       => '',
+                            'body_html'       => '',
+                            'has_attachments' => false,
+                            'is_read'         => true,
+                            'is_starred'      => false,
+                            'created_at'      => now(),
+                        ]);
+                        if ($headers['message_id']) {
+                            $existingMessageIds[$headers['message_id']] = 1;
                         }
+                        $newMessageIds[] = $messageId;
+                        $newMessages++;
+                        continue;
                     }
 
                     // Fetch body completo
@@ -356,6 +408,11 @@ class SyncService
                         'is_starred'     => false,
                         'created_at'     => now(),
                     ]);
+
+                    // Registrar en mapa en memoria para evitar duplicados en el mismo lote
+                    if ($headers['message_id']) {
+                        $existingMessageIds[$headers['message_id']] = 1;
+                    }
 
                     // Guardar adjuntos
                     if (!empty($bodyData['attachments'])) {
@@ -446,8 +503,10 @@ class SyncService
             if (Storage::exists($cacheFile)) {
                 $cacheData = json_decode(Storage::get($cacheFile), true) ?? [];
             }
-            $cachedUids   = $cacheData['uids']       ?? [];
-            $lastMsgCount = $cacheData['last_count']  ?? 0;
+            $cachedUids    = $cacheData['uids']       ?? [];
+            $lastMsgCount  = $cacheData['last_count']  ?? 0;
+            // Mapa hash para búsqueda O(1)
+            $cachedUidsMap = array_flip($cachedUids);
 
             yield ['status' => 'downloading', 'current' => 0, 'total' => 0, 'message' => 'Obteniendo lista de mensajes...'];
 
@@ -488,7 +547,7 @@ class SyncService
                     ? $messageId
                     : $account->imap_host . '_' . $msgNum . '_' . ($ov->size ?? 0);
 
-                if (!in_array($uid, $cachedUids, true)) {
+                if (!isset($cachedUidsMap[$uid])) {
                     $pending[$msgNum] = ['uid' => $uid, 'overview' => $ov];
                 }
             }
@@ -517,7 +576,7 @@ class SyncService
                             ->where('account_id', $account->id)
                             ->exists();
                         if ($exists) {
-                            $cachedUids[] = $uid;
+                            $cachedUidsMap[$uid] = 1;
                             continue;
                         }
                     }
@@ -567,7 +626,7 @@ class SyncService
                             'is_starred'     => false,
                             'created_at'     => now(),
                         ]);
-                        $cachedUids[] = $uid;
+                        $cachedUidsMap[$uid] = 1;
                         $newMessages++;
                         continue;
                     }
@@ -602,7 +661,7 @@ class SyncService
                         $this->saveAttachments($msgData['attachments'], $message);
                     }
 
-                    $cachedUids[]    = $uid;
+                    $cachedUidsMap[$uid] = 1;
                     $newMessageIds[] = $messageId;
                     $newMessages++;
 
@@ -615,7 +674,7 @@ class SyncService
             }
 
             Storage::put($cacheFile, json_encode([
-                'uids'       => array_values(array_unique($cachedUids)),
+                'uids'       => array_keys($cachedUidsMap),
                 'last_count' => $currentCount,
             ]));
 
