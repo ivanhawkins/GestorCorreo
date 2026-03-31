@@ -1,0 +1,194 @@
+@extends('layouts.app')
+@section('title', 'Hawkins Mail')
+
+@section('content')
+<div class="mail-app" id="app">
+
+    <!-- ── SIDEBAR ── -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo-row">
+                <div class="sidebar-brand">
+                    <div class="sidebar-brand-mark">H</div>
+                    <div class="sidebar-brand-name">
+                        Hawkins Mail
+                        <span class="version">v.05</span>
+                    </div>
+                </div>
+                <button class="btn-icon" id="btn-settings" title="Configurar cuenta">&#9881;</button>
+            </div>
+            <div class="sidebar-user" id="sidebar-user"></div>
+        </div>
+
+        <div class="sidebar-actions">
+            <button class="btn-sync" id="btn-sync">Sincronizar</button>
+            <button class="btn-compose-sidebar" id="btn-compose-sidebar">Redactar</button>
+        </div>
+
+        <div id="sync-status" class="sync-status" style="display:none"></div>
+
+        <div class="accounts-section">
+            <div class="accounts-header">
+                <h3>Cuentas</h3>
+                <button class="btn-icon" id="btn-add-account" title="Añadir cuenta">&#43;</button>
+            </div>
+            <div id="accounts-list"></div>
+        </div>
+
+        <div class="folders-section">
+            <h3>Carpetas</h3>
+            <div id="folders-list">
+                <div class="folder-item active" data-filter="all">
+                    Bandeja de entrada <span class="total-count" id="count-all"></span>
+                </div>
+                <div class="folder-item" data-filter="starred">Destacados</div>
+                <div class="folder-item" data-filter="Interesantes">Interesantes</div>
+                <div class="folder-item" data-filter="Servicios">Servicios</div>
+                <div class="folder-item" data-filter="EnCopia">En copia</div>
+                <div class="folder-item" data-filter="SPAM">SPAM</div>
+                <div class="folder-item" data-filter="deleted">Eliminados</div>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            <button class="btn-logout" id="btn-logout">Cerrar sesión</button>
+        </div>
+    </aside>
+
+    <!-- ── MAIN ── -->
+    <div class="main-content">
+
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <input type="text" id="search-input" class="search-input" placeholder="Buscar mensajes…">
+            </div>
+            <div class="toolbar-actions">
+                <button class="btn-toolbar" id="btn-mark-read">Marcar leídos</button>
+                <button class="btn-toolbar" id="btn-empty-trash" style="display:none">Vaciar</button>
+                <button class="btn-toolbar primary" id="btn-compose">Redactar</button>
+            </div>
+        </div>
+
+        <div class="content-split-pane">
+            <div class="list-pane" id="list-pane">
+                <div id="messages-container"></div>
+            </div>
+            <div class="detail-pane" id="detail-pane" style="display:none">
+                <div id="message-viewer"></div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- ── MODAL: Compose ── -->
+<div class="modal-overlay" id="modal-compose" style="display:none">
+    <div class="modal-box compose-box">
+        <div class="modal-header">
+            <h3 id="compose-title">Nuevo mensaje</h3>
+            <button class="btn-icon" id="btn-close-compose">&#10005;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Desde</label>
+                <select id="compose-from" class="form-control"></select>
+            </div>
+            <div class="form-group">
+                <label>Para</label>
+                <input type="email" id="compose-to" class="form-control" placeholder="destinatario@dominio.com">
+            </div>
+            <div class="form-group">
+                <label>CC</label>
+                <input type="text" id="compose-cc" class="form-control" placeholder="cc@dominio.com">
+            </div>
+            <div class="form-group">
+                <label>Asunto</label>
+                <input type="text" id="compose-subject" class="form-control" placeholder="Asunto">
+            </div>
+            <div class="form-group">
+                <label>Mensaje</label>
+                <textarea id="compose-body" class="form-control compose-textarea" placeholder="Escribe tu mensaje…"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" id="btn-cancel-compose">Cancelar</button>
+            <button class="btn-primary" id="btn-send">Enviar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── MODAL: Account ── -->
+<div class="modal-overlay" id="modal-account" style="display:none">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h3 id="account-modal-title">Añadir cuenta</h3>
+            <button class="btn-icon" id="btn-close-account">&#10005;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Nombre visible</label>
+                <input type="text" id="acc-name" class="form-control" placeholder="Ej. Trabajo">
+            </div>
+            <div class="form-group">
+                <label>Correo electrónico</label>
+                <input type="email" id="acc-email" class="form-control" placeholder="usuario@dominio.com">
+            </div>
+            <div class="form-group">
+                <label>Contraseña</label>
+                <input type="password" id="acc-password" class="form-control">
+            </div>
+
+            <hr class="form-divider">
+            <p class="form-section-title">Recepción (IMAP / POP3)</p>
+            <div class="form-row">
+                <div class="form-group flex-2">
+                    <label>Servidor</label>
+                    <input type="text" id="acc-imap-host" class="form-control" placeholder="imap.dominio.com">
+                </div>
+                <div class="form-group flex-1">
+                    <label>Puerto</label>
+                    <input type="number" id="acc-imap-port" class="form-control" value="993">
+                </div>
+                <div class="form-group flex-1">
+                    <label>Cifrado</label>
+                    <select id="acc-imap-ssl" class="form-control">
+                        <option value="1">SSL/TLS</option>
+                        <option value="0">Ninguno</option>
+                    </select>
+                </div>
+            </div>
+
+            <hr class="form-divider">
+            <p class="form-section-title">Envío (SMTP)</p>
+            <div class="form-row">
+                <div class="form-group flex-2">
+                    <label>Servidor</label>
+                    <input type="text" id="acc-smtp-host" class="form-control" placeholder="smtp.dominio.com">
+                </div>
+                <div class="form-group flex-1">
+                    <label>Puerto</label>
+                    <input type="number" id="acc-smtp-port" class="form-control" value="587">
+                </div>
+                <div class="form-group flex-1">
+                    <label>Cifrado</label>
+                    <select id="acc-smtp-ssl" class="form-control">
+                        <option value="1">SSL/TLS</option>
+                        <option value="0">Ninguno</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" id="btn-cancel-account">Cancelar</button>
+            <button class="btn-primary" id="btn-save-account">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── TOASTS ── -->
+<div id="toast-container" class="toast-container"></div>
+
+@push('scripts')
+<script src="/js/mail.js"></script>
+@endpush
+@endsection
