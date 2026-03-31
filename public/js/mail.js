@@ -225,6 +225,8 @@ async function loadAccounts() {
     if (!S.selectedAccount && S.accounts.length) {
         S.selectedAccount = S.accounts[0].id;
         renderAccounts();
+    } else if (S.accounts.length === 0) {
+        openAccountModal();
     }
 }
 

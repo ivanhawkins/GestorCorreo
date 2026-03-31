@@ -74,19 +74,9 @@ class AuthController extends Controller
     {
         $currentUser = $request->user();
 
-        // Verificar si se permite el registro
+        // Verificar si es el primer usuario
         $userCount = User::count();
         $isFirstUser = $userCount === 0;
-
-        if (!$isFirstUser) {
-            // Debe estar autenticado y ser admin
-            if (!$currentUser) {
-                return response()->json(['error' => 'No autenticado. Solo administradores pueden crear usuarios.'], 401);
-            }
-            if (!$currentUser->is_admin) {
-                return response()->json(['error' => 'Solo los administradores pueden crear nuevos usuarios.'], 403);
-            }
-        }
 
         $validated = $request->validate([
             'username' => 'required|string|max:255|unique:users,username',
@@ -94,11 +84,21 @@ class AuthController extends Controller
             'is_admin' => 'sometimes|boolean',
         ]);
 
+        // Solo el primer usuario, o un admin autenticado, puede crear cuentas de admin
+        $isAdminRequest = $validated['is_admin'] ?? false;
+        $canCreateAdmin = $isFirstUser || ($currentUser && $currentUser->is_admin);
+        $finalIsAdmin = $isAdminRequest && $canCreateAdmin;
+
+        // Si no hay usuarios, el primero siempre es admin por defecto
+        if ($isFirstUser) {
+            $finalIsAdmin = true;
+        }
+
         $user = User::create([
             'username'      => $validated['username'],
             'password_hash' => bcrypt($validated['password']),
             'is_active'     => true,
-            'is_admin'      => $validated['is_admin'] ?? $isFirstUser, // el primer usuario es admin
+            'is_admin'      => $finalIsAdmin,
         ]);
 
         $token = $user->createToken('api-token')->plainTextToken;
