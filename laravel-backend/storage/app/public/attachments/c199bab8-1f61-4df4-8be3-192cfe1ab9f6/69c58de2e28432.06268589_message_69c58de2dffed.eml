@@ -1,7 +1,0 @@
-Reporting-MTA:dns;kundenserver.de
-Arrival-Date:Thu, 26 Mar 2026 07:09:48 +0100
-
-Final-Recipient:rfc822;abarroso@lchawkins.com
-Action:failed
-Status:5.0.0
-Final-Log-ID:1N6Itb-1vUM6906af-00rBiN

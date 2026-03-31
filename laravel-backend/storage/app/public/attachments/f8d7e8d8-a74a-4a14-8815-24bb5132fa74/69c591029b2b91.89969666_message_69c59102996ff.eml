@@ -1,9 +1,0 @@
-Reporting-MTA: dns;BY1PR03MB7971.namprd03.prod.outlook.com
-Received-From-MTA: dns;PH0PR03MB5846.namprd03.prod.outlook.com
-Arrival-Date: Wed, 28 Jan 2026 12:42:20 +0000
-
-Final-Recipient: rfc822;kikifope123@westernmarks.com
-Action: failed
-Status: 5.4.312
-Diagnostic-Code: smtp;550 5.4.312 Message expired, DNS query failed
-
