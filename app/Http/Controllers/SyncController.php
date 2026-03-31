@@ -76,7 +76,7 @@ class SyncController extends Controller
             // devolvemos un stream con error
             return response()->stream(function () {
                 echo "data: " . json_encode(['status' => 'error', 'error' => 'Cuenta no encontrada o inactiva.']) . "\n\n";
-                ob_flush();
+                if (ob_get_level() > 0) ob_flush();
                 flush();
             }, 200, [
                 'Content-Type'     => 'text/event-stream',
@@ -90,7 +90,7 @@ class SyncController extends Controller
         } catch (\Throwable $e) {
             return response()->stream(function () use ($e) {
                 echo "data: " . json_encode(['status' => 'error', 'error' => 'No se pudo desencriptar la contraseña: ' . $e->getMessage()]) . "\n\n";
-                ob_flush();
+                if (ob_get_level() > 0) ob_flush();
                 flush();
             }, 200, [
                 'Content-Type'     => 'text/event-stream',
@@ -104,7 +104,7 @@ class SyncController extends Controller
         return response()->stream(function () use ($account, $password, $syncService) {
             foreach ($syncService->syncAccountStreaming($account, $password) as $progress) {
                 echo "data: " . json_encode($progress) . "\n\n";
-                ob_flush();
+                if (ob_get_level() > 0) ob_flush();
                 flush();
             }
         }, 200, [
