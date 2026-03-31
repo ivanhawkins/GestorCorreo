@@ -494,6 +494,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const me = await api('GET', '/auth/me');
     if (!me || !me.ok) { doLogout(); return; }
 
+    if (me.data?.is_admin) {
+        const adminBtn = document.getElementById('btn-admin');
+        if (adminBtn) adminBtn.style.display = '';
+    }
+
     await loadAccounts();
     await loadMessages();
 

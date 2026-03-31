@@ -15,6 +15,7 @@ Route::withoutMiddleware([
 ])->group(function () {
 
     Route::get('/login', fn() => view('login'))->name('login');
+    Route::get('/admin', fn() => view('admin'))->name('admin');
 
     // Todo lo demás → dashboard (el JS comprueba el token)
     Route::get('/{any?}', fn() => view('dashboard'))->where('any', '.*');

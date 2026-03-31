@@ -51,6 +51,7 @@
         </div>
 
         <div class="sidebar-footer">
+            <a href="/admin" id="btn-admin" class="btn-logout" style="display:none;text-decoration:none;text-align:left;margin-bottom:.4rem">Panel de administración</a>
             <button class="btn-logout" id="btn-logout">Cerrar sesión</button>
         </div>
     </aside>
