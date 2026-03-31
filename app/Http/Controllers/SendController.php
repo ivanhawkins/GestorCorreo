@@ -83,8 +83,8 @@ class SendController extends Controller
         if (!empty($validated['attachments']) && is_array($validated['attachments'])) {
             $emailData['attachments'] = [];
             foreach ($validated['attachments'] as $att) {
-                $decoded = base64_decode((string)($att['content_base64'] ?? ''), true);
-                if ($decoded === false) {
+                $decoded = $this->decodeAttachmentPayload((string)($att['content_base64'] ?? ''));
+                if ($decoded === null || $decoded === '') {
                     continue;
                 }
                 $emailData['attachments'][] = [
@@ -175,5 +175,29 @@ class SendController extends Controller
             'message' => $result['message'],
             'status'  => 'success',
         ]);
+    }
+
+    private function decodeAttachmentPayload(string $payload): ?string
+    {
+        $payload = trim($payload);
+        if ($payload === '') {
+            return null;
+        }
+
+        // Permitir formato data URL por robustez.
+        if (str_contains($payload, ',')) {
+            $parts = explode(',', $payload, 2);
+            if (isset($parts[1]) && str_starts_with($parts[0], 'data:')) {
+                $payload = $parts[1];
+            }
+        }
+
+        $payload = preg_replace('/\s+/', '', $payload) ?? $payload;
+        $decoded = base64_decode($payload, true);
+        if ($decoded === false) {
+            $decoded = base64_decode($payload, false);
+        }
+
+        return $decoded === false ? null : $decoded;
     }
 }

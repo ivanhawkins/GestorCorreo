@@ -340,12 +340,21 @@ class Pop3Service
 
     private function decodeTransfer(string $body, string $encoding): string
     {
-        $body = rtrim($body, "\r\n");
-        return match ($encoding) {
-            'base64' => base64_decode($body, true) ?: '',
-            'quoted-printable' => quoted_printable_decode($body),
-            default => $body,
-        };
+        if ($encoding === 'base64') {
+            // En adjuntos POP3 el base64 suele venir con saltos/espacios.
+            $normalized = preg_replace('/\s+/', '', $body) ?? $body;
+            $decoded = base64_decode($normalized, true);
+            if ($decoded === false) {
+                $decoded = base64_decode($normalized, false);
+            }
+            return $decoded === false ? '' : $decoded;
+        }
+
+        if ($encoding === 'quoted-printable') {
+            return quoted_printable_decode($body);
+        }
+
+        return rtrim($body, "\r\n");
     }
 
     private function decodeHeader(string $value): string
