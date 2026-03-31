@@ -547,17 +547,34 @@ window.openMessageLarge = async function (id) {
         return;
     }
     const m = r.data;
+    S.activeMessage = m;
+    const attachments = (m.attachments || []).map(a =>
+        `<a class="attachment-chip" href="/api/attachments/${a.id}/download"
+            target="_blank" rel="noopener" onclick="dlAttachment(event,${a.id})">📎 ${escHtml(a.filename)}</a>`
+    ).join('');
     const previewHtml = buildPreviewHtml(m);
     const body = previewHtml
         ? `<div class="viewer-body-html"><iframe srcdoc="${escHtml(previewHtml)}" sandbox="allow-same-origin"></iframe></div>`
         : `<div class="viewer-body-text">${escHtml(m.body_text || '')}</div>`;
     document.getElementById('message-large-content').innerHTML = `
-        <div class="viewer-subject">${escHtml(m.subject || '(Sin asunto)')}</div>
-        <div class="viewer-meta">
-            <div><strong>De:</strong> ${escHtml(m.from_name ? `${m.from_name} <${m.from_email}>` : (m.from_email || ''))}</div>
-            <div><strong>Fecha:</strong> ${m.date ? new Date(m.date).toLocaleString('es-ES') : ''}</div>
+        <div class="message-viewer-wrap">
+            <div class="viewer-subject">${escHtml(m.subject || '(Sin asunto)')}</div>
+            <div class="viewer-meta">
+                <div><strong>De:</strong> ${escHtml(m.from_name ? `${m.from_name} <${m.from_email}>` : (m.from_email || ''))}</div>
+                <div><strong>Para:</strong> ${escHtml(m.to_email || '')}</div>
+                <div><strong>Fecha:</strong> ${m.date ? new Date(m.date).toLocaleString('es-ES') : ''}</div>
+            </div>
+            <div class="viewer-actions">
+                <button class="btn-toolbar" onclick="replyTo('reply')">↩ Responder</button>
+                <button class="btn-toolbar" onclick="replyTo('reply_all')">↩ Resp. todos</button>
+                <button class="btn-toolbar" onclick="replyTo('forward')">↪ Reenviar</button>
+                <button class="btn-toolbar" onclick="markAsSpam('${m.id}')">🚫 Marcar SPAM</button>
+                <button class="btn-toolbar" onclick="toggleRead('${m.id}', ${m.is_read ? 'true' : 'false'})">${m.is_read ? 'Marcar no leído' : 'Marcar leído'}</button>
+                <button class="btn-toolbar" onclick="deleteMsg('${m.id}')">🗑️ Eliminar</button>
+            </div>
+            <div class="viewer-body" style="margin-top:1rem">${body}</div>
+            ${attachments ? `<div class="viewer-attachments"><h4>Adjuntos</h4>${attachments}</div>` : ''}
         </div>
-        <div class="viewer-body" style="margin-top:1rem">${body}</div>
     `;
     document.getElementById('modal-message-large').style.display = 'flex';
 };
@@ -646,6 +663,7 @@ async function saveAccount() {
     const imapHost = document.getElementById('acc-imap-host').value.trim();
     const imapPort = parseInt(document.getElementById('acc-imap-port').value);
     const rawPassword = document.getElementById('acc-password').value;
+    const tempPlatformPassword = sessionStorage.getItem('platform_password_temp') || '';
     const inferredProtocol = (imapHost.toLowerCase().startsWith('pop.') || [110, 995].includes(imapPort)) ? 'pop3' : 'imap';
     const body = {
         name: document.getElementById('acc-name').value.trim(),
@@ -662,6 +680,9 @@ async function saveAccount() {
     };
     if (rawPassword && rawPassword.trim() !== '') {
         body.password = rawPassword;
+    } else if (!S.editingAccountId && tempPlatformPassword) {
+        // Primera configuración: usar automáticamente la misma contraseña del registro/login.
+        body.password = tempPlatformPassword;
     }
     if (!body.email_address) { toast('El email es obligatorio', 'error'); return; }
 
@@ -677,6 +698,10 @@ async function saveAccount() {
     if (r?.ok) {
         toast(S.editingAccountId ? 'Cuenta actualizada' : 'Cuenta añadida', 'success');
         document.getElementById('modal-account').style.display = 'none';
+        if (!S.editingAccountId) {
+            // Solo se necesita para la primera configuración automática.
+            sessionStorage.removeItem('platform_password_temp');
+        }
         await loadAccounts();
         loadMessages(true);
     } else {

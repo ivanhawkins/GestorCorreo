@@ -92,6 +92,8 @@ document.getElementById('login-form').addEventListener('submit', async function(
         if (!res.ok) throw new Error(data.message || data.error || 'Credenciales incorrectas');
         localStorage.setItem('token', data.access_token || data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
+        // Solo en sesión actual: se usa para autoconfigurar la primera cuenta de correo.
+        sessionStorage.setItem('platform_password_temp', document.getElementById('password').value);
         const redirect = sessionStorage.getItem('redirect_after_login') || '/';
         sessionStorage.removeItem('redirect_after_login');
         window.location.href = redirect;
@@ -125,6 +127,8 @@ document.getElementById('register-form').addEventListener('submit', async functi
         if (!res.ok) throw new Error(data.message || data.error || 'Error al registrarse');
         localStorage.setItem('token', data.access_token || data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
+        // Registro recién creado: reutilizar password para primera configuración de cuenta.
+        sessionStorage.setItem('platform_password_temp', document.getElementById('reg-password').value);
         window.location.href = '/';
     } catch (ex) {
         err.textContent = ex.message;
