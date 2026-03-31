@@ -18,6 +18,23 @@ class SyncService
         private EncryptionService $encryption
     ) {}
 
+    private function resolveProtocol(Account $account): string
+    {
+        $protocol = strtolower((string)($account->protocol ?? ''));
+        if (in_array($protocol, ['imap', 'pop3'], true)) {
+            return $protocol;
+        }
+
+        $host = strtolower((string)($account->imap_host ?? ''));
+        $port = (int)($account->imap_port ?? 0);
+
+        if (str_starts_with($host, 'pop.') || str_contains($host, 'pop3') || in_array($port, [110, 995], true)) {
+            return 'pop3';
+        }
+
+        return 'imap';
+    }
+
     /**
      * Limpia un texto para que sea válido UTF-8 y lo trunca con mb_substr.
      * Evita el error MySQL "Incorrect string value" por bytes multibyte cortados.
@@ -40,7 +57,7 @@ class SyncService
     public function syncAccount(Account $account, string $password): array
     {
         try {
-            if (strtolower($account->protocol ?? 'imap') === 'pop3') {
+            if ($this->resolveProtocol($account) === 'pop3') {
                 return $this->syncPop3($account, $password);
             }
             return $this->syncImap($account, $password);
@@ -464,7 +481,7 @@ class SyncService
      */
     public function syncAccountStreaming(Account $account, string $password): \Generator
     {
-        $protocol = strtolower($account->protocol ?? 'imap');
+        $protocol = $this->resolveProtocol($account);
 
         yield ['status' => 'connecting', 'message' => "Conectando a {$account->imap_host}..."];
 
@@ -751,7 +768,7 @@ class SyncService
      */
     public function resyncBodies(Account $account, string $password): array
     {
-        $protocol = strtolower($account->protocol ?? 'imap');
+        $protocol = $this->resolveProtocol($account);
 
         $emptyMessages = Message::where('account_id', $account->id)
             ->where(function ($q) {

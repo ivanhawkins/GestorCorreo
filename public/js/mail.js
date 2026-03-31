@@ -449,16 +449,20 @@ function openAccountModal(acc = null) {
 
 async function saveAccount() {
     const emailStr = document.getElementById('acc-email').value.trim();
+    const imapHost = document.getElementById('acc-imap-host').value.trim();
+    const imapPort = parseInt(document.getElementById('acc-imap-port').value);
+    const inferredProtocol = (imapHost.toLowerCase().startsWith('pop.') || [110, 995].includes(imapPort)) ? 'pop3' : 'imap';
     const body = {
         name: document.getElementById('acc-name').value.trim(),
         email_address: emailStr,
         username: emailStr, // Generalmente se usa el email como usuario en IMAP
         password: document.getElementById('acc-password').value,
-        imap_host: document.getElementById('acc-imap-host').value.trim(),
-        imap_port: parseInt(document.getElementById('acc-imap-port').value),
+        imap_host: imapHost,
+        imap_port: imapPort,
         smtp_host: document.getElementById('acc-smtp-host').value.trim(),
         smtp_port: parseInt(document.getElementById('acc-smtp-port').value),
         ssl_verify: document.getElementById('acc-imap-ssl').value === '1',
+        protocol: inferredProtocol,
     };
     if (!body.email_address) { toast('El email es obligatorio', 'error'); return; }
 

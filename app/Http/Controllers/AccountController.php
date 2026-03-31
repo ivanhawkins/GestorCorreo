@@ -14,6 +14,22 @@ class AccountController extends Controller
 {
     public function __construct(private EncryptionService $encryption) {}
 
+    private function inferProtocol(array $data): string
+    {
+        if (!empty($data['protocol']) && in_array(strtolower((string)$data['protocol']), ['imap', 'pop3'], true)) {
+            return strtolower((string)$data['protocol']);
+        }
+
+        $host = strtolower((string)($data['imap_host'] ?? ''));
+        $port = (int)($data['imap_port'] ?? 0);
+
+        if (str_starts_with($host, 'pop.') || str_contains($host, 'pop3') || in_array($port, [110, 995], true)) {
+            return 'pop3';
+        }
+
+        return 'imap';
+    }
+
     /**
      * GET /accounts
      * Lista las cuentas del usuario autenticado (no eliminadas).
@@ -106,7 +122,7 @@ class AccountController extends Controller
             'smtp_port'                     => $validated['smtp_port'],
             'username'                      => $validated['username'],
             'encrypted_password'            => $encryptedPassword,
-            'protocol'                      => $validated['protocol']           ?? 'imap',
+            'protocol'                      => $this->inferProtocol($validated),
             'is_active'                     => $validated['is_active']          ?? true,
             'ssl_verify'                    => $validated['ssl_verify']         ?? true,
             'connection_timeout'            => $validated['connection_timeout']  ?? 30,
@@ -184,7 +200,7 @@ class AccountController extends Controller
             'smtp_port'                     => $validated['smtp_port'],
             'username'                      => $validated['username'],
             'encrypted_password'            => $encryptedPassword,
-            'protocol'                      => $validated['protocol']           ?? 'imap',
+            'protocol'                      => $this->inferProtocol($validated),
             'is_active'                     => $validated['is_active']          ?? true,
             'ssl_verify'                    => $validated['ssl_verify']         ?? true,
             'connection_timeout'            => $validated['connection_timeout']  ?? 30,
@@ -257,6 +273,18 @@ class AccountController extends Controller
         if (isset($validated['password'])) {
             $validated['encrypted_password'] = $this->encryption->encrypt($validated['password']);
             unset($validated['password']);
+        }
+
+        if (
+            array_key_exists('protocol', $validated) ||
+            array_key_exists('imap_host', $validated) ||
+            array_key_exists('imap_port', $validated)
+        ) {
+            $validated['protocol'] = $this->inferProtocol($validated + [
+                'imap_host' => $account->imap_host,
+                'imap_port' => $account->imap_port,
+                'protocol'  => $account->protocol,
+            ]);
         }
 
         $account->fill($validated);
@@ -333,7 +361,11 @@ class AccountController extends Controller
             return response()->json(['error' => 'No se pudo desencriptar la contraseña: ' . $e->getMessage()], 500);
         }
 
-        $protocol = strtolower($account->protocol ?? 'imap');
+        $protocol = $this->inferProtocol([
+            'protocol'  => $account->protocol,
+            'imap_host' => $account->imap_host,
+            'imap_port' => $account->imap_port,
+        ]);
 
         try {
             if ($protocol === 'pop3') {
