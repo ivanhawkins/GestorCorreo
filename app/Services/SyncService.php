@@ -154,22 +154,11 @@ class SyncService
                 return ['status' => 'success', 'new_messages' => 0, 'new_message_ids' => [], 'error' => null];
             }
 
-            // Optimización: solo descargar overviews de mensajes NUEVOS (msgNum > lastMsgCount)
-            // Los mensajes anteriores ya están en caché.
-            if ($lastMsgCount > 0 && $currentCount <= $lastMsgCount) {
-                // No hay mensajes nuevos
-                return ['status' => 'success', 'new_messages' => 0, 'new_message_ids' => [], 'error' => null];
-            }
-
-            $startFrom = $lastMsgCount > 0 ? $lastMsgCount + 1 : 1;
-
-            // Obtener todos los mensajes nuevos
+            // Obtener UIDLs actuales del servidor y procesar sólo los no vistos.
             $allUidls = $pop3->getAllUidls();
-            
-            // Filtrar solo los que están en el rango que no conocemos (mensajes nuevos tras lastMsgCount)
             $allOverviews = [];
             foreach ($allUidls as $msgNum => $uid) {
-                if ($msgNum >= $startFrom) {
+                if (!isset($cachedUidsMap[$uid])) {
                     $allOverviews[$msgNum] = (object)['uid' => $uid];
                 }
             }
@@ -486,18 +475,11 @@ class SyncService
                 return;
             }
 
-            // Optimización: solo descargar overviews de mensajes NUEVOS
-            if ($lastMsgCount > 0 && $currentCount <= $lastMsgCount) {
-                yield ['status' => 'success', 'new_messages' => 0, 'new_message_ids' => []];
-                return;
-            }
-
-            $startFrom    = $lastMsgCount > 0 ? $lastMsgCount + 1 : 1;
             $allUidls     = $pop3->getAllUidls();
 
             $pending = [];
             foreach ($allUidls as $msgNum => $uid) {
-                if ($msgNum >= $startFrom && !isset($cachedUidsMap[$uid])) {
+                if (!isset($cachedUidsMap[$uid])) {
                     $pending[$msgNum] = ['uid' => $uid];
                 }
             }
