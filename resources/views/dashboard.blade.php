@@ -177,11 +177,11 @@
             <div class="form-row">
                 <div class="form-group flex-2">
                     <label>Servidor</label>
-                    <input type="text" id="acc-imap-host" class="form-control" placeholder="imap.dominio.com">
+                    <input type="text" id="acc-imap-host" class="form-control" placeholder="pop.ionos.es" value="pop.ionos.es">
                 </div>
                 <div class="form-group flex-1">
                     <label>Puerto</label>
-                    <input type="number" id="acc-imap-port" class="form-control" value="993">
+                    <input type="number" id="acc-imap-port" class="form-control" value="965">
                 </div>
                 <div class="form-group flex-1">
                     <label>Cifrado</label>
@@ -201,7 +201,7 @@
                 </div>
                 <div class="form-group flex-1">
                     <label>Puerto</label>
-                    <input type="number" id="acc-smtp-port" class="form-control" value="587">
+                    <input type="number" id="acc-smtp-port" class="form-control" value="465">
                 </div>
                 <div class="form-group flex-1">
                     <label>Cifrado</label>

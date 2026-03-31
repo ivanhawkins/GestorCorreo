@@ -25,7 +25,7 @@ class SyncService
         $host = strtolower((string)($account->imap_host ?? ''));
         $port = (int)($account->imap_port ?? 0);
 
-        if (str_starts_with($host, 'pop.') || str_contains($host, 'pop3') || in_array($port, [110, 995], true)) {
+        if (str_starts_with($host, 'pop.') || str_contains($host, 'pop3') || in_array($port, [110, 965, 995], true)) {
             return 'pop3';
         }
 

@@ -86,11 +86,15 @@ class SendController extends Controller
                 ->where('account_id', $account->id)
                 ->first();
             if ($original) {
+                $cleanOriginalBody = $this->normalizeQuotedOriginalBody(
+                    (string)($original->body_text ?? ''),
+                    (string)($original->body_html ?? '')
+                );
                 $quoted = "\n\n-------- Mensaje original --------\n"
                     . "De: " . ($original->from_email ?? '') . "\n"
                     . "Fecha: " . ($original->date ? $original->date->toDateTimeString() : '') . "\n"
                     . "Asunto: " . ($original->subject ?? '') . "\n\n"
-                    . ($original->body_text ?? '');
+                    . $cleanOriginalBody;
                 if (!str_contains((string)$emailData['body_text'], '-------- Mensaje original --------')) {
                     $emailData['body_text'] = ($emailData['body_text'] ?? '') . $quoted;
                 }
@@ -241,5 +245,29 @@ class SendController extends Controller
         }
 
         return $decoded === false ? null : $decoded;
+    }
+
+    private function normalizeQuotedOriginalBody(string $bodyText, string $bodyHtml): string
+    {
+        $text = trim($bodyText);
+
+        if (preg_match('/=[A-Fa-f0-9]{2}/', $text) || str_contains($text, '=0D=0A')) {
+            $qp = preg_replace('/=\r?\n/', '', $text) ?? $text;
+            $decoded = quoted_printable_decode($qp);
+            if (is_string($decoded) && trim($decoded) !== '') {
+                $text = $decoded;
+            }
+        }
+
+        if ($text === '' || preg_match('/<html|<body|<table|<style/i', $text)) {
+            $source = trim($bodyHtml) !== '' ? $bodyHtml : $text;
+            $text = strip_tags($source);
+        }
+
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace("/\r\n|\r/", "\n", $text) ?? $text;
+        $text = preg_replace("/\n{3,}/", "\n\n", $text) ?? $text;
+
+        return trim($text);
     }
 }

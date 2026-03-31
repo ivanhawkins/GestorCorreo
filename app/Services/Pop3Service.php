@@ -22,7 +22,7 @@ class Pop3Service
         $host = (string)$this->account->imap_host;
         $port = (int)$this->account->imap_port;
         $timeout = 30;
-        $isSsl = $port === 995;
+        $isSsl = in_array($port, [965, 995], true);
         $transport = $isSsl ? 'tls' : 'tcp';
         $target = sprintf('%s://%s:%d', $transport, $host, $port);
 

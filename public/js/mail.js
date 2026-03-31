@@ -233,6 +233,7 @@ async function renderViewer(msg) {
     const r = await api('GET', `/messages/${msg.id}`);
     if (!r || !r.ok) { viewer.innerHTML = '<div class="empty-state"><p>Error al cargar</p></div>'; return; }
     const m = r.data;
+    S.activeMessage = m;
 
     const attachments = (m.attachments || []).map(a =>
         `<a class="attachment-chip" href="/api/attachments/${a.id}/download"
@@ -240,9 +241,10 @@ async function renderViewer(msg) {
     ).join('');
 
     const previewHtml = buildPreviewHtml(m);
+    const normalizedText = normalizeBodyTextForReply(m.body_text, m.body_html);
     const bodyHtml = previewHtml
         ? `<div class="viewer-body-html"><iframe srcdoc="${escHtml(previewHtml)}" sandbox="allow-same-origin"></iframe></div>`
-        : `<div class="viewer-body-text">${escHtml(m.body_text || '')}</div>`;
+        : `<div class="viewer-body-text">${escHtml(normalizedText || '')}</div>`;
 
     viewer.innerHTML = `
         <div class="message-viewer-wrap">
@@ -592,9 +594,10 @@ window.openMessageLarge = async function (id) {
             target="_blank" rel="noopener" onclick="dlAttachment(event,${a.id})">📎 ${escHtml(a.filename)}</a>`
     ).join('');
     const previewHtml = buildPreviewHtml(m);
+    const normalizedText = normalizeBodyTextForReply(m.body_text, m.body_html);
     const body = previewHtml
         ? `<div class="viewer-body-html"><iframe srcdoc="${escHtml(previewHtml)}" sandbox="allow-same-origin"></iframe></div>`
-        : `<div class="viewer-body-text">${escHtml(m.body_text || '')}</div>`;
+        : `<div class="viewer-body-text">${escHtml(normalizedText || '')}</div>`;
     document.getElementById('message-large-content').innerHTML = `
         <div class="message-viewer-wrap">
             <div class="viewer-subject">${escHtml(m.subject || '(Sin asunto)')}</div>
@@ -686,11 +689,11 @@ function openAccountModal(acc = null) {
     document.getElementById('acc-email').readOnly = true;
     document.getElementById('acc-email').title = 'Se usa automáticamente el email del registro en la plataforma';
     document.getElementById('acc-password').value = '';
-    document.getElementById('acc-imap-host').value = acc?.imap_host || '';
-    document.getElementById('acc-imap-port').value = acc?.imap_port || 993;
+    document.getElementById('acc-imap-host').value = acc?.imap_host || 'pop.ionos.es';
+    document.getElementById('acc-imap-port').value = acc?.imap_port || 965;
     document.getElementById('acc-imap-ssl').value = acc?.imap_ssl ? '1' : '0';
     document.getElementById('acc-smtp-host').value = acc?.smtp_host || '';
-    document.getElementById('acc-smtp-port').value = acc?.smtp_port || 587;
+    document.getElementById('acc-smtp-port').value = acc?.smtp_port || 465;
     document.getElementById('acc-smtp-ssl').value = acc?.smtp_ssl ? '1' : '0';
     document.getElementById('acc-owner-profile').value = acc?.owner_profile || '';
     document.getElementById('acc-custom-classification-prompt').value = acc?.custom_classification_prompt || '';
@@ -703,7 +706,7 @@ async function saveAccount() {
     const imapPort = parseInt(document.getElementById('acc-imap-port').value);
     const rawPassword = document.getElementById('acc-password').value;
     const tempPlatformPassword = sessionStorage.getItem('platform_password_temp') || '';
-    const inferredProtocol = (imapHost.toLowerCase().startsWith('pop.') || [110, 995].includes(imapPort)) ? 'pop3' : 'imap';
+    const inferredProtocol = (imapHost.toLowerCase().startsWith('pop.') || [110, 965, 995].includes(imapPort)) ? 'pop3' : 'imap';
     const body = {
         name: document.getElementById('acc-name').value.trim(),
         email_address: emailStr,
