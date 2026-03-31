@@ -6,17 +6,17 @@ console.log('%c📧 Hawkins Mail v.05', 'color:#667eea;font-size:15px;font-weigh
 
 /* ── State ──────────────────────────────────────────────────────── */
 const S = {
-    token:           localStorage.getItem('token'),
-    user:            JSON.parse(localStorage.getItem('user') || 'null'),
-    accounts:        [],
+    token: localStorage.getItem('token'),
+    user: JSON.parse(localStorage.getItem('user') || 'null'),
+    accounts: [],
     selectedAccount: null,
-    messages:        [],
-    activeMessage:   null,
-    filter:          'all',
-    search:          '',
-    page:            1,
-    hasMore:         true,
-    syncing:         false,
+    messages: [],
+    activeMessage: null,
+    filter: 'all',
+    search: '',
+    page: 1,
+    hasMore: true,
+    syncing: false,
     editingAccountId: null,
 };
 
@@ -52,7 +52,7 @@ function toast(msg, type = 'info') {
 
 /* ── Logout ─────────────────────────────────────────────────────── */
 function doLogout() {
-    api('POST', '/auth/logout').catch(() => {});
+    api('POST', '/auth/logout').catch(() => { });
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     window.location.href = '/login';
@@ -71,9 +71,9 @@ function fmtDate(d) {
 /* ── Badge ──────────────────────────────────────────────────────── */
 const BADGE_MAP = {
     'Interesantes': ['badge-interesantes', '⭐'],
-    'SPAM':         ['badge-spam',         '🚫'],
-    'EnCopia':      ['badge-encopia',      '📋'],
-    'Servicios':    ['badge-servicios',    '🔔'],
+    'SPAM': ['badge-spam', '🚫'],
+    'EnCopia': ['badge-encopia', '📋'],
+    'Servicios': ['badge-servicios', '🔔'],
 };
 function badge(label) {
     if (!label || !BADGE_MAP[label]) return '';
@@ -139,7 +139,7 @@ function renderMessages() {
 }
 
 function escHtml(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /* ── Render: message viewer ─────────────────────────────────────── */
@@ -231,7 +231,7 @@ async function loadAccounts() {
 }
 
 /* ── Select account ─────────────────────────────────────────────── */
-window.selectAccount = function(id) {
+window.selectAccount = function (id) {
     S.selectedAccount = id;
     S.filter = 'all';
     renderAccounts();
@@ -241,14 +241,14 @@ window.selectAccount = function(id) {
 };
 
 /* ── Open message ───────────────────────────────────────────────── */
-window.openMessage = function(id) {
+window.openMessage = function (id) {
     S.activeMessage = S.messages.find(m => m.id === id) || { id };
     renderMessages();
     renderViewer(S.activeMessage);
 };
 
 /* ── Toggle star ────────────────────────────────────────────────── */
-window.toggleStar = async function(e, id, current) {
+window.toggleStar = async function (e, id, current) {
     e.stopPropagation();
     const r = await api('PATCH', `/messages/${id}`, { is_starred: !current });
     if (r?.ok) {
@@ -259,7 +259,7 @@ window.toggleStar = async function(e, id, current) {
 };
 
 /* ── Delete message ─────────────────────────────────────────────── */
-window.deleteMsg = async function(id) {
+window.deleteMsg = async function (id) {
     const r = await api('DELETE', `/messages/${id}`);
     if (r?.ok) {
         S.messages = S.messages.filter(m => m.id !== id);
@@ -279,7 +279,7 @@ function closeViewer() {
 }
 
 /* ── Download attachment ────────────────────────────────────────── */
-window.dlAttachment = async function(e, id) {
+window.dlAttachment = async function (e, id) {
     e.preventDefault();
     const r = await fetch(`/api/attachments/${id}/download`, {
         headers: { 'Authorization': `Bearer ${S.token}` }
@@ -330,7 +330,7 @@ async function doSync() {
                 try {
                     const ev = JSON.parse(line.slice(5).trim());
                     updateSyncStatus(ev, statusEl);
-                } catch {}
+                } catch { }
             }
         }
 
@@ -348,10 +348,10 @@ async function doSync() {
 
 function updateSyncStatus(ev, el) {
     const phase = ev.phase || '';
-    const msg   = ev.message || '';
-    const cur   = ev.current ?? 0;
-    const tot   = ev.total   ?? 0;
-    const pct   = tot > 0 ? Math.round((cur / tot) * 100) : 0;
+    const msg = ev.message || '';
+    const cur = ev.current ?? 0;
+    const tot = ev.total ?? 0;
+    const pct = tot > 0 ? Math.round((cur / tot) * 100) : 0;
     el.innerHTML = `
         <div>${phase ? `[${phase}] ` : ''}${escHtml(msg)}</div>
         ${tot > 0 ? `<div>${cur}/${tot}</div>
@@ -373,9 +373,9 @@ function openCompose(mode = 'new', originalMsg = null) {
     if (S.selectedAccount) sel.value = S.selectedAccount;
 
     // Pre-fill fields
-    const to      = document.getElementById('compose-to');
+    const to = document.getElementById('compose-to');
     const subject = document.getElementById('compose-subject');
-    const body    = document.getElementById('compose-body');
+    const body = document.getElementById('compose-body');
 
     to.value = ''; subject.value = ''; body.value = '';
 
@@ -393,16 +393,16 @@ function openCompose(mode = 'new', originalMsg = null) {
     to.focus();
 }
 
-window.replyTo = function(mode) {
+window.replyTo = function (mode) {
     openCompose(mode, S.activeMessage);
 };
 
 async function sendEmail() {
     const accountId = parseInt(document.getElementById('compose-from').value);
-    const to        = document.getElementById('compose-to').value.trim();
-    const cc        = document.getElementById('compose-cc').value.trim();
-    const subject   = document.getElementById('compose-subject').value.trim();
-    const body      = document.getElementById('compose-body').value;
+    const to = document.getElementById('compose-to').value.trim();
+    const cc = document.getElementById('compose-cc').value.trim();
+    const subject = document.getElementById('compose-subject').value.trim();
+    const body = document.getElementById('compose-body').value;
 
     if (!to || !subject) { toast('Destinatario y asunto obligatorios', 'error'); return; }
 
@@ -428,29 +428,29 @@ async function sendEmail() {
 function openAccountModal(acc = null) {
     S.editingAccountId = acc?.id || null;
     document.getElementById('account-modal-title').textContent = acc ? 'Editar cuenta' : 'Añadir cuenta';
-    document.getElementById('acc-name').value       = acc?.name || '';
-    document.getElementById('acc-email').value      = acc?.email || '';
-    document.getElementById('acc-password').value   = '';
-    document.getElementById('acc-imap-host').value  = acc?.imap_host || '';
-    document.getElementById('acc-imap-port').value  = acc?.imap_port || 993;
-    document.getElementById('acc-imap-ssl').value   = acc?.imap_ssl ? '1' : '0';
-    document.getElementById('acc-smtp-host').value  = acc?.smtp_host || '';
-    document.getElementById('acc-smtp-port').value  = acc?.smtp_port || 587;
-    document.getElementById('acc-smtp-ssl').value   = acc?.smtp_ssl ? '1' : '0';
+    document.getElementById('acc-name').value = acc?.name || '';
+    document.getElementById('acc-email').value = acc?.email || '';
+    document.getElementById('acc-password').value = '';
+    document.getElementById('acc-imap-host').value = acc?.imap_host || '';
+    document.getElementById('acc-imap-port').value = acc?.imap_port || 993;
+    document.getElementById('acc-imap-ssl').value = acc?.imap_ssl ? '1' : '0';
+    document.getElementById('acc-smtp-host').value = acc?.smtp_host || '';
+    document.getElementById('acc-smtp-port').value = acc?.smtp_port || 587;
+    document.getElementById('acc-smtp-ssl').value = acc?.smtp_ssl ? '1' : '0';
     document.getElementById('modal-account').style.display = 'flex';
 }
 
 async function saveAccount() {
     const body = {
-        name:      document.getElementById('acc-name').value.trim(),
-        email:     document.getElementById('acc-email').value.trim(),
-        password:  document.getElementById('acc-password').value,
+        name: document.getElementById('acc-name').value.trim(),
+        email: document.getElementById('acc-email').value.trim(),
+        password: document.getElementById('acc-password').value,
         imap_host: document.getElementById('acc-imap-host').value.trim(),
         imap_port: parseInt(document.getElementById('acc-imap-port').value),
-        imap_ssl:  document.getElementById('acc-imap-ssl').value === '1',
+        imap_ssl: document.getElementById('acc-imap-ssl').value === '1',
         smtp_host: document.getElementById('acc-smtp-host').value.trim(),
         smtp_port: parseInt(document.getElementById('acc-smtp-port').value),
-        smtp_ssl:  document.getElementById('acc-smtp-ssl').value === '1',
+        smtp_ssl: document.getElementById('acc-smtp-ssl').value === '1',
     };
     if (!body.email) { toast('El email es obligatorio', 'error'); return; }
 
@@ -495,11 +495,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Auth check
     const me = await api('GET', '/auth/me');
     if (!me || !me.ok) { doLogout(); return; }
-
-    if (me.data?.is_admin) {
-        const adminBtn = document.getElementById('btn-admin');
-        if (adminBtn) adminBtn.style.display = '';
-    }
 
     await loadAccounts();
     await loadMessages();

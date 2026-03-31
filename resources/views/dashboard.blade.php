@@ -15,14 +15,16 @@
                         <span class="version">v.05</span>
                     </div>
                 </div>
-                <button class="btn-icon" id="btn-settings" title="Configurar cuenta">&#9881;</button>
+                <div style="display:flex; gap:0.25rem;">
+                    <button class="btn-icon" id="btn-settings" title="Ajustes de cuenta">⚙️</button>
+                </div>
             </div>
             <div class="sidebar-user" id="sidebar-user"></div>
         </div>
 
         <div class="sidebar-actions">
-            <button class="btn-sync" id="btn-sync">Sincronizar</button>
-            <button class="btn-compose-sidebar" id="btn-compose-sidebar">Redactar</button>
+            <button class="btn-sync" id="btn-sync">🔄 Sincronizar</button>
+            <button class="btn-compose-sidebar" id="btn-compose-sidebar">✏️ Redactar</button>
         </div>
 
         <div id="sync-status" class="sync-status" style="display:none"></div>

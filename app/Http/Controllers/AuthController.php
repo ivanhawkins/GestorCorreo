@@ -79,7 +79,7 @@ class AuthController extends Controller
         $isFirstUser = $userCount === 0;
 
         $validated = $request->validate([
-            'username' => 'required|string|max:255|unique:users,username',
+            'username' => 'required|string|max:255|unique:users,username,NULL,id,deleted_at,NULL',
             'password' => 'required|string|min:6',
             'is_admin' => 'sometimes|boolean',
         ]);
