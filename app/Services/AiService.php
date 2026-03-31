@@ -199,12 +199,14 @@ PROMPT;
     {
         if (!$this->config) return null;
 
-        $endpoint = rtrim($this->config->api_url, '/') . '/chat';
+        $endpoint = $this->resolveChatEndpoint((string)$this->config->api_url);
 
         $response = Http::withHeaders(['x-api-key' => $this->config->api_key])
             ->timeout($timeout)
             ->post($endpoint, [
                 'prompt' => $prompt,
+                // Compatibilidad con APIs que esperan "modelo" o "model"
+                'modelo' => $modelName,
                 'model'  => $modelName,
             ]);
 
@@ -217,6 +219,26 @@ PROMPT;
         }
 
         return $this->extractTextFromResponse($response);
+    }
+
+    private function resolveChatEndpoint(string $apiUrl): string
+    {
+        $url = rtrim($apiUrl, '/');
+
+        if (str_ends_with($url, '/chat/chat')) {
+            return $url;
+        }
+
+        // Normalizar configuraciones antiguas erróneas como /chat/text/chat
+        if (str_ends_with($url, '/chat/text/chat')) {
+            return substr($url, 0, -strlen('/text/chat')) . '/chat';
+        }
+
+        if (str_ends_with($url, '/chat')) {
+            return $url;
+        }
+
+        return $url . '/chat/chat';
     }
 
     /**

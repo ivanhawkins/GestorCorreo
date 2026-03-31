@@ -500,7 +500,7 @@ window.deleteAdminAccount = async function(id) {
 async function loadAIConfig() {
     const r = await api('GET', '/ai-config');
     if (!r.ok) return;
-    const c = r.data;
+    const c = r.data?.config || r.data || {};
     document.getElementById('ai-url').value            = c.api_url || '';
     document.getElementById('ai-primary-model').value  = c.primary_model || '';
     document.getElementById('ai-secondary-model').value = c.secondary_model || '';
@@ -521,7 +521,11 @@ document.getElementById('btn-save-ai').addEventListener('click', async () => {
 document.getElementById('btn-test-ai').addEventListener('click', async () => {
     const statusEl = document.getElementById('ai-status');
     statusEl.textContent = 'Probando conexión…';
-    const r = await api('POST', '/ai/test');
+    const r = await api('POST', '/ai/test', {
+        api_url: document.getElementById('ai-url').value.trim(),
+        api_key: document.getElementById('ai-key').value.trim() || undefined,
+        primary_model: document.getElementById('ai-primary-model').value.trim() || undefined,
+    });
     statusEl.textContent = r.ok ? '✓ Conexión correcta' : '✕ Error: ' + (r.data?.message || 'sin respuesta');
     statusEl.style.color = r.ok ? '#4ade80' : '#fca5a5';
 });

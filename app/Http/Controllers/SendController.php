@@ -32,6 +32,10 @@ class SendController extends Controller
             'body_text'  => 'sometimes|nullable|string',
             'body_html'  => 'sometimes|nullable|string',
             'reply_to'   => 'sometimes|nullable|string|email',
+            'attachments' => 'sometimes|array',
+            'attachments.*.name' => 'required_with:attachments|string|max:255',
+            'attachments.*.mime_type' => 'sometimes|nullable|string|max:120',
+            'attachments.*.content_base64' => 'required_with:attachments|string',
         ]);
 
         // Verificar que la cuenta pertenece al usuario
@@ -70,6 +74,21 @@ class SendController extends Controller
 
         if (!empty($validated['reply_to'])) {
             $emailData['reply_to'] = $validated['reply_to'];
+        }
+
+        if (!empty($validated['attachments']) && is_array($validated['attachments'])) {
+            $emailData['attachments'] = [];
+            foreach ($validated['attachments'] as $att) {
+                $decoded = base64_decode((string)($att['content_base64'] ?? ''), true);
+                if ($decoded === false) {
+                    continue;
+                }
+                $emailData['attachments'][] = [
+                    'name'      => $att['name'] ?? ('attachment_' . uniqid()),
+                    'mime_type' => $att['mime_type'] ?? 'application/octet-stream',
+                    'content'   => $decoded,
+                ];
+            }
         }
 
         // Enviar email

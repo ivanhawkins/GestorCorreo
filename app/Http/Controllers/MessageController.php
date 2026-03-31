@@ -23,8 +23,14 @@ class MessageController extends Controller
             'account_id' => 'sometimes|integer',
             'folder'     => 'sometimes|string',
             'category'   => 'sometimes|string',
+            'label'      => 'sometimes|string',
             'search'     => 'sometimes|string|max:255',
             'page'       => 'sometimes|integer|min:1',
+            'starred'    => 'sometimes|boolean',
+            'deleted'    => 'sometimes|boolean',
+            'is_read'    => 'sometimes|boolean',
+            'date_from'  => 'sometimes|date',
+            'date_to'    => 'sometimes|date',
         ]);
 
         // Obtener IDs de cuentas del usuario
@@ -48,11 +54,31 @@ class MessageController extends Controller
             $query->where('folder', $validated['folder']);
         }
 
-        // Filtro por categoría (join con classifications)
-        if (!empty($validated['category'])) {
+        $category = $validated['category'] ?? $validated['label'] ?? null;
+        if (!empty($category)) {
             $query->whereHas('classification', function ($q) use ($validated) {
-                $q->where('final_label', $validated['category']);
+                $q->where('final_label', $validated['category'] ?? $validated['label']);
             });
+        }
+
+        if (array_key_exists('starred', $validated)) {
+            $query->where('is_starred', (bool)$validated['starred']);
+        }
+
+        if (array_key_exists('is_read', $validated)) {
+            $query->where('is_read', (bool)$validated['is_read']);
+        }
+
+        if (array_key_exists('deleted', $validated)) {
+            $query->where('folder', (bool)$validated['deleted'] ? 'deleted' : 'INBOX');
+        }
+
+        if (!empty($validated['date_from'])) {
+            $query->where('date', '>=', $validated['date_from']);
+        }
+
+        if (!empty($validated['date_to'])) {
+            $query->where('date', '<=', $validated['date_to'] . ' 23:59:59');
         }
 
         // Búsqueda por asunto o remitente
@@ -67,7 +93,7 @@ class MessageController extends Controller
 
         $query->orderBy('date', 'desc');
 
-        $perPage  = 15;
+        $perPage  = 50;
         $page     = $validated['page'] ?? 1;
         $paginated = $query->paginate($perPage, ['*'], 'page', $page);
 

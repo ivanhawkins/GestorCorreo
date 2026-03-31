@@ -18,6 +18,9 @@ const S = {
     hasMore: true,
     syncing: false,
     editingAccountId: null,
+    dateFrom: '',
+    dateTo: '',
+    readFilter: '',
 };
 
 /* ── Auth guard ─────────────────────────────────────────────────── */
@@ -121,8 +124,9 @@ function renderMessages() {
     }
     container.innerHTML = S.messages.map(m => `
         <div class="message-item ${m.is_read ? 'read' : 'unread'} ${S.activeMessage?.id === m.id ? 'active' : ''}"
-             data-id="${m.id}" onclick="openMessage('${m.id}')">
+             data-id="${m.id}" onclick="openMessage('${m.id}')" ondblclick="openMessageLarge('${m.id}')">
             <div class="message-from">
+                ${m.is_read ? '' : '<span title="No leído">🔵</span>'}
                 ${escHtml(m.from_name || m.from_email || '')}
                 ${badge(m.classification_label)}
             </div>
@@ -176,6 +180,7 @@ async function renderViewer(msg) {
                     <button class="btn-toolbar" onclick="replyTo('reply')">↩ Responder</button>
                     <button class="btn-toolbar" onclick="replyTo('reply_all')">↩ Resp. todos</button>
                     <button class="btn-toolbar" onclick="replyTo('forward')">↪ Reenviar</button>
+                    <button class="btn-toolbar" onclick="toggleRead('${m.id}', ${m.is_read ? 'true' : 'false'})">${m.is_read ? 'Marcar no leído' : 'Marcar leído'}</button>
                     <button class="btn-toolbar" onclick="deleteMsg('${m.id}')">🗑️ Eliminar</button>
                 </div>
             </div>
@@ -202,6 +207,9 @@ async function loadMessages(reset = true) {
     if (S.filter === 'starred') params.set('starred', '1');
     else if (S.filter === 'deleted') params.set('deleted', '1');
     else if (S.filter !== 'all') params.set('label', S.filter);
+    if (S.dateFrom) params.set('date_from', S.dateFrom);
+    if (S.dateTo) params.set('date_to', S.dateTo);
+    if (S.readFilter !== '') params.set('is_read', S.readFilter);
     if (S.search) params.set('search', S.search);
 
     document.getElementById('messages-container').innerHTML = '<div class="loading-state">Cargando…</div>';
@@ -256,6 +264,18 @@ window.toggleStar = async function (e, id, current) {
         if (idx >= 0) S.messages[idx].is_starred = !current;
         renderMessages();
     }
+};
+
+window.toggleRead = async function (id, current) {
+    const r = await api('PUT', `/messages/${id}/read`, { is_read: !current });
+    if (!r?.ok) {
+        toast('Error al actualizar lectura', 'error');
+        return;
+    }
+    const idx = S.messages.findIndex(m => m.id === id);
+    if (idx >= 0) S.messages[idx].is_read = !current;
+    if (S.activeMessage?.id === id) S.activeMessage.is_read = !current;
+    renderMessages();
 };
 
 /* ── Delete message ─────────────────────────────────────────────── */
@@ -383,8 +403,12 @@ function openCompose(mode = 'new', originalMsg = null) {
     const to = document.getElementById('compose-to');
     const subject = document.getElementById('compose-subject');
     const body = document.getElementById('compose-body');
+    const aiInstruction = document.getElementById('compose-ai-instruction');
+    const files = document.getElementById('compose-files');
 
     to.value = ''; subject.value = ''; body.value = '';
+    if (aiInstruction) aiInstruction.value = '';
+    if (files) files.value = '';
 
     if (originalMsg && mode !== 'new') {
         if (mode === 'reply') to.value = originalMsg.from_email || '';
@@ -404,12 +428,77 @@ window.replyTo = function (mode) {
     openCompose(mode, S.activeMessage);
 };
 
+async function generateComposeWithAI() {
+    const instruction = document.getElementById('compose-ai-instruction').value.trim();
+    if (!instruction) {
+        toast('Escribe una instrucción para IA', 'error');
+        return;
+    }
+
+    const original = _composeContext?.originalMsg || S.activeMessage || {};
+    const selectedAccount = S.accounts.find(a => a.id == document.getElementById('compose-from').value) || {};
+    const ownerProfile = selectedAccount.owner_profile || '';
+    const btn = document.getElementById('btn-generate-compose-ai');
+    btn.disabled = true;
+    btn.textContent = 'Generando…';
+
+    const r = await api('POST', '/ai/generate_reply', {
+        original_from_name: original.from_name || '',
+        original_from_email: original.from_email || document.getElementById('compose-to').value.trim(),
+        original_subject: original.subject || document.getElementById('compose-subject').value.trim(),
+        original_body: original.body_text || '',
+        user_instruction: instruction,
+        owner_profile: ownerProfile || 'Responde de forma breve, clara y profesional.',
+    });
+
+    btn.disabled = false;
+    btn.textContent = 'Generar con IA';
+
+    if (r?.ok && r.data?.reply_body) {
+        document.getElementById('compose-body').value = r.data.reply_body;
+        toast('Borrador generado con IA', 'success');
+    } else {
+        toast(r?.data?.error || 'No se pudo generar el borrador', 'error');
+    }
+}
+
+window.openMessageLarge = async function (id) {
+    const r = await api('GET', `/messages/${id}`);
+    if (!r?.ok) {
+        toast('No se pudo abrir el mensaje', 'error');
+        return;
+    }
+    const m = r.data;
+    const body = m.body_html
+        ? `<div class="viewer-body-html"><iframe srcdoc="${escHtml(m.body_html)}" sandbox="allow-same-origin"></iframe></div>`
+        : `<div class="viewer-body-text">${escHtml(m.body_text || '')}</div>`;
+    document.getElementById('message-large-content').innerHTML = `
+        <div class="viewer-subject">${escHtml(m.subject || '(Sin asunto)')}</div>
+        <div class="viewer-meta">
+            <div><strong>De:</strong> ${escHtml(m.from_name ? `${m.from_name} <${m.from_email}>` : (m.from_email || ''))}</div>
+            <div><strong>Fecha:</strong> ${m.date ? new Date(m.date).toLocaleString('es-ES') : ''}</div>
+        </div>
+        <div class="viewer-body" style="margin-top:1rem">${body}</div>
+    `;
+    document.getElementById('modal-message-large').style.display = 'flex';
+};
+
+async function refreshAiHealth() {
+    const dot = document.getElementById('ai-health-dot');
+    if (!dot) return;
+    const r = await api('GET', '/ai/status');
+    const up = !!(r?.ok && r.data?.available);
+    dot.style.background = up ? '#16a34a' : '#dc2626';
+    dot.title = up ? 'IA operativa' : ('IA no disponible: ' + (r?.data?.reason || 'sin detalle'));
+}
+
 async function sendEmail() {
     const accountId = parseInt(document.getElementById('compose-from').value);
     const to = document.getElementById('compose-to').value.trim();
     const cc = document.getElementById('compose-cc').value.trim();
     const subject = document.getElementById('compose-subject').value.trim();
     const body = document.getElementById('compose-body').value;
+    const files = Array.from(document.getElementById('compose-files').files || []);
 
     if (!to || !subject) { toast('Destinatario y asunto obligatorios', 'error'); return; }
 
@@ -419,6 +508,13 @@ async function sendEmail() {
     const payload = { account_id: accountId, to, subject, body_text: body };
     if (cc) payload.cc = cc;
     if (_composeContext?.originalMsg?.id) payload.reply_to_message_id = _composeContext.originalMsg.id;
+    if (files.length) {
+        payload.attachments = await Promise.all(files.map(async (f) => ({
+            name: f.name,
+            mime_type: f.type || 'application/octet-stream',
+            content_base64: await fileToBase64(f),
+        })));
+    }
 
     const r = await api('POST', '/send', payload);
     btn.disabled = false; btn.textContent = '📤 Enviar';
@@ -426,9 +522,23 @@ async function sendEmail() {
     if (r?.ok) {
         toast('Mensaje enviado', 'success');
         document.getElementById('modal-compose').style.display = 'none';
+        document.getElementById('compose-files').value = '';
     } else {
         toast(r?.data?.message || 'Error al enviar', 'error');
     }
+}
+
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => {
+            const res = String(fr.result || '');
+            const base64 = res.includes(',') ? res.split(',')[1] : res;
+            resolve(base64);
+        };
+        fr.onerror = reject;
+        fr.readAsDataURL(file);
+    });
 }
 
 /* ── Account modal ──────────────────────────────────────────────── */
@@ -510,6 +620,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await loadAccounts();
     await loadMessages();
+    await refreshAiHealth();
 
     // Sidebar buttons
     document.getElementById('btn-sync').addEventListener('click', doSync);
@@ -518,6 +629,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('btn-logout').addEventListener('click', doLogout);
     document.getElementById('btn-add-account').addEventListener('click', () => openAccountModal());
     document.getElementById('btn-mark-read').addEventListener('click', markAllRead);
+    document.getElementById('filter-date-from').addEventListener('change', (e) => { S.dateFrom = e.target.value; loadMessages(); });
+    document.getElementById('filter-date-to').addEventListener('change', (e) => { S.dateTo = e.target.value; loadMessages(); });
+    document.getElementById('filter-read').addEventListener('change', (e) => { S.readFilter = e.target.value; loadMessages(); });
+    document.getElementById('btn-clear-filters').addEventListener('click', () => {
+        S.dateFrom = '';
+        S.dateTo = '';
+        S.readFilter = '';
+        document.getElementById('filter-date-from').value = '';
+        document.getElementById('filter-date-to').value = '';
+        document.getElementById('filter-read').value = '';
+        loadMessages();
+    });
 
     // Settings button → re-use account modal for now
     document.getElementById('btn-settings').addEventListener('click', () => {
@@ -555,6 +678,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('modal-compose').style.display = 'none';
     });
     document.getElementById('btn-send').addEventListener('click', sendEmail);
+    document.getElementById('btn-generate-compose-ai').addEventListener('click', generateComposeWithAI);
+    document.getElementById('btn-close-message-large').addEventListener('click', () => {
+        document.getElementById('modal-message-large').style.display = 'none';
+    });
 
     // Account modal
     document.getElementById('btn-close-account').addEventListener('click', () => {

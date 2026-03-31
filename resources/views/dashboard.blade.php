@@ -15,7 +15,8 @@
                         <span class="version">v.05</span>
                     </div>
                 </div>
-                <div style="display:flex; gap:0.25rem;">
+                <div style="display:flex; gap:0.25rem; align-items:center;">
+                    <span id="ai-health-dot" title="Estado IA" style="width:10px;height:10px;border-radius:999px;background:#6b7280;display:inline-block"></span>
                     <button class="btn-icon" id="btn-settings" title="Ajustes de cuenta">⚙️</button>
                 </div>
             </div>
@@ -64,6 +65,16 @@
         <div class="toolbar">
             <div class="toolbar-left">
                 <input type="text" id="search-input" class="search-input" placeholder="Buscar mensajes…">
+                <div class="form-row" style="margin-top:.4rem; gap:.4rem; align-items:center;">
+                    <input type="date" id="filter-date-from" class="form-control" style="max-width:160px">
+                    <input type="date" id="filter-date-to" class="form-control" style="max-width:160px">
+                    <select id="filter-read" class="form-control" style="max-width:150px">
+                        <option value="">Leídos y no leídos</option>
+                        <option value="0">No leídos</option>
+                        <option value="1">Leídos</option>
+                    </select>
+                    <button class="btn-toolbar" id="btn-clear-filters" type="button">Limpiar filtros</button>
+                </div>
             </div>
             <div class="toolbar-actions">
                 <button class="btn-toolbar" id="btn-mark-read">Marcar leídos</button>
@@ -112,11 +123,30 @@
                 <label>Mensaje</label>
                 <textarea id="compose-body" class="form-control compose-textarea" placeholder="Escribe tu mensaje…"></textarea>
             </div>
+            <div class="form-group">
+                <label>Instrucción para IA (tu estilo)</label>
+                <input type="text" id="compose-ai-instruction" class="form-control" placeholder="Ej: Dile que sí, amable y breve">
+            </div>
+            <div class="form-group">
+                <label>Adjuntar archivos</label>
+                <input type="file" id="compose-files" class="form-control" multiple>
+            </div>
         </div>
         <div class="modal-footer">
+            <button class="btn-secondary" id="btn-generate-compose-ai">Generar con IA</button>
             <button class="btn-secondary" id="btn-cancel-compose">Cancelar</button>
             <button class="btn-primary" id="btn-send">Enviar</button>
         </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="modal-message-large" style="display:none">
+    <div class="modal-box" style="max-width:980px;width:96vw;">
+        <div class="modal-header">
+            <h3>Mensaje</h3>
+            <button class="btn-icon" id="btn-close-message-large">&#10005;</button>
+        </div>
+        <div class="modal-body" id="message-large-content"></div>
     </div>
 </div>
 
