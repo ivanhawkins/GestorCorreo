@@ -6,7 +6,6 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Webklex\PHPIMAP\Client;
 use Webklex\PHPIMAP\ClientManager;
-use Webklex\PHPIMAP\Exceptions\ResponseException;
 
 class ImapService
 {
@@ -22,10 +21,17 @@ class ImapService
     }
 
     /**
-     * Conectar al servidor usando la librería Pure PHP de Webklex.
+     * Conectar al servidor con LOGS DETALLADOS.
      */
     public function connect(int $maxRetries = 3): bool
     {
+        Log::info('--- INICIANDO DIAGNÓSTICO DE CONEXIÓN IMAP ---');
+        Log::info('Entorno PHP:', [
+            'version' => PHP_VERSION,
+            'imap_extension_detectada' => function_exists('imap_open') ? 'SÍ' : 'NO',
+            'allow_url_fopen' => ini_get('allow_url_fopen') ? 'SÍ' : 'NO',
+        ]);
+
         $cm = new ClientManager();
         
         $encryption = 'ssl';
@@ -33,52 +39,62 @@ class ImapService
             $encryption = 'notls';
         }
 
-        $this->client = $cm->make([
+        $config = [
             'host'          => $this->account->imap_host,
             'port'          => (int)$this->account->imap_port,
             'encryption'    => $encryption,
-            'validate_cert' => false, // Cambiado a falso para evitar fallos de conexión por certificados
+            'validate_cert' => false,
             'username'      => $this->account->username,
-            'password'      => $this->password,
+            'password'      => '********', // Oculta por seguridad
             'protocol'      => 'imap',
             'timeout'       => 60,
-            'proxy'         => [
-                'socket' => 'tcp',
-                'request_options' => [
-                    'timeout' => 60,
-                ],
-            ],
-            'options' => [
-                'DISABLE_AUTHENTICATOR' => 'GSSAPI' // Desactivar métodos raros de autenticación que fallan a veces
-            ]
-        ]);
+        ];
+
+        Log::info('Configuración que estamos enviando:', $config);
+
+        // Intentar la conexión real
+        $this->client = $cm->make(array_merge($config, ['password' => $this->password]));
 
         try {
             $this->client->connect();
-            Log::info('ImapService (Webklex): Conexión establecida', [
-                'account' => $this->account->email_address,
-                'host'    => $this->account->imap_host
-            ]);
+            Log::info('¡ÉXITO! Conexión IMAP establecida correctamente.');
             return true;
         } catch (\Exception $e) {
-            Log::error('ImapService (Webklex): Fallo de conexión', [
-                'account' => $this->account->email_address,
-                'error'   => $e->getMessage()
+            Log::error('ERROR CRÍTICO DE CONEXIÓN IMAP:', [
+                'mensaje' => $e->getMessage(),
+                'archivo' => $e->getFile(),
+                'linea'   => $e->getLine(),
+                'traza'   => substr($e->getTraceAsString(), 0, 500) . '...' // Solo los 500 primeros chars
             ]);
+
+            // Comprobar si es un problema de red externo
+            $this->checkServerConnectivity($this->account->imap_host, (int)$this->account->imap_port);
+
             return false;
+        }
+    }
+
+    private function checkServerConnectivity($host, $port)
+    {
+        Log::info("Comprobando si el servidor puede llegar a {$host}:{$port}...");
+        $connection = @fsockopen($host, $port, $errno, $errstr, 5);
+        if (is_resource($connection)) {
+            Log::info("TCP Check: El servidor TIENE acceso físico a {$host}:{$port}.");
+            fclose($connection);
+        } else {
+            Log::error("TCP Check: El servidor NO puede llegar a {$host}:{$port}. Motivo: ({$errno}) {$errstr}");
         }
     }
 
     public function disconnect(): void
     {
         if ($this->client) {
-            $this->client->disconnect();
+            try {
+                $this->client->disconnect();
+            } catch (\Exception $e) {}
         }
     }
 
-    /**
-     * Selecciona una carpeta.
-     */
     public function selectFolder(string $folder = 'INBOX'): bool
     {
         if (!$this->client || !$this->client->isConnected()) return false;
@@ -86,22 +102,14 @@ class ImapService
         return true;
     }
 
-    /**
-     * Obtiene los UIDs de mensajes nuevos.
-     */
     public function getNewMessageUids(int $lastUid = 0): array
     {
         if (!$this->client || !$this->client->isConnected()) return [];
-
         try {
             $folder = $this->client->getFolder($this->currentFolderName ?: 'INBOX');
-            
-            if ($lastUid === 0) {
-                $messages = $folder->messages()->all()->get();
-            } else {
-                // Buscar mensajes con UID superior al último sincronizado
-                $messages = $folder->messages()->whereUidGreaterThan($lastUid)->get();
-            }
+            $messages = ($lastUid === 0) 
+                ? $folder->messages()->all()->get() 
+                : $folder->messages()->whereUidGreaterThan($lastUid)->get();
 
             $uids = [];
             foreach ($messages as $msg) {
@@ -110,48 +118,39 @@ class ImapService
             sort($uids);
             return $uids;
         } catch (\Exception $e) {
-            Log::error('ImapService (Webklex): Error en getNewMessageUids', ['error' => $e->getMessage()]);
+            Log::error('Error descargando UIDs:', ['error' => $e->getMessage()]);
             return [];
         }
     }
 
-    /**
-     * Obtiene headers de un mensaje.
-     */
     public function fetchMessageHeaders(int $uid): ?array
     {
         try {
             $folder = $this->client->getFolder($this->currentFolderName ?: 'INBOX');
             $message = $folder->query()->whereUid($uid)->get()->first();
-
             if (!$message) return null;
 
             return [
                 'uid'          => $uid,
                 'message_id'   => (string)$message->getMessageId(),
                 'subject'      => (string)$message->getSubject(),
-                'from_name'    => (string)$message->getFrom()[0]->personal ?? '',
-                'from_email'   => (string)$message->getFrom()[0]->mail ?? '',
+                'from_name'    => (string)($message->getFrom()[0]->personal ?? ''),
+                'from_email'   => (string)($message->getFrom()[0]->mail ?? ''),
                 'to_addresses' => json_encode($this->parseAddresses($message->getTo())),
-                'cc_addresses' => json_encode($this->parseAddresses($message->getCc())),
+                'cc_addresses'   => json_encode($this->parseAddresses($message->getCc())),
                 'date'         => Carbon::parse($message->getDate()),
                 'snippet'      => '',
             ];
         } catch (\Exception $e) {
-            Log::error('ImapService (Webklex): Error en fetchHeaders', ['uid' => $uid, 'error' => $e->getMessage()]);
             return null;
         }
     }
 
-    /**
-     * Descarga el cuerpo y adjuntos.
-     */
     public function fetchFullMessageBody(int $uid): ?array
     {
         try {
             $folder = $this->client->getFolder($this->currentFolderName ?: 'INBOX');
             $message = $folder->query()->whereUid($uid)->get()->first();
-
             if (!$message) return null;
 
             $attachments = [];
@@ -170,7 +169,6 @@ class ImapService
                 'attachments' => $attachments,
             ];
         } catch (\Exception $e) {
-            Log::error('ImapService (Webklex): Error en fetchBody', ['uid' => $uid, 'error' => $e->getMessage()]);
             return null;
         }
     }
@@ -185,10 +183,5 @@ class ImapService
             ];
         }
         return $res;
-    }
-
-    private function isConnected(): bool
-    {
-        return $this->client && $this->client->isConnected();
     }
 }
