@@ -21,6 +21,7 @@ const S = {
     dateFrom: '',
     dateTo: '',
     readFilter: '',
+    autoSyncTimer: null,
 };
 
 /* ── Auth guard ─────────────────────────────────────────────────── */
@@ -778,6 +779,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadMessages();
     await loadUnreadCounts();
     await refreshAiHealth();
+    // Sincronizar automáticamente al entrar.
+    doSync();
 
     // Sidebar buttons
     document.getElementById('btn-sync').addEventListener('click', doSync);
@@ -886,4 +889,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             loadMessages(false);
         }
     });
+
+    // Auto-sync cada minuto (si no hay una sync en curso, doSync ya lo evita).
+    if (S.autoSyncTimer) clearInterval(S.autoSyncTimer);
+    S.autoSyncTimer = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+            doSync();
+        }
+    }, 60000);
 });
