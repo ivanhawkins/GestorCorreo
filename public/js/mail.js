@@ -115,6 +115,20 @@ function renderFolders() {
     if (trashBtn) trashBtn.style.display = S.filter === 'deleted' ? '' : 'none';
 }
 
+async function loadUnreadCounts() {
+    const qs = S.selectedAccount ? `?account_id=${S.selectedAccount}` : '';
+    const r = await api('GET', `/messages/unread-counts${qs}`);
+    if (!r?.ok) return;
+    const c = r.data || {};
+    const ids = ['all', 'starred', 'Interesantes', 'Servicios', 'EnCopia', 'SPAM', 'deleted'];
+    ids.forEach((k) => {
+        const el = document.getElementById(`count-${k}`);
+        if (!el) return;
+        const n = Number(c[k] || 0);
+        el.textContent = n > 0 ? String(n) : '';
+    });
+}
+
 /* ── Render: message list ───────────────────────────────────────── */
 function renderMessages() {
     const container = document.getElementById('messages-container');
@@ -124,7 +138,9 @@ function renderMessages() {
     }
     container.innerHTML = S.messages.map(m => `
         <div class="message-item ${m.is_read ? 'read' : 'unread'} ${S.activeMessage?.id === m.id ? 'active' : ''}"
-             data-id="${m.id}" onclick="openMessage('${m.id}')" ondblclick="openMessageLarge('${m.id}')">
+             data-id="${m.id}" draggable="true"
+             ondragstart="onMessageDragStart(event,'${m.id}')"
+             onclick="openMessage('${m.id}')" ondblclick="openMessageLarge('${m.id}')">
             <div class="message-from">
                 ${m.is_read ? '' : '<span title="No leído">🔵</span>'}
                 ${escHtml(m.from_name || m.from_email || '')}
@@ -180,6 +196,7 @@ async function renderViewer(msg) {
                     <button class="btn-toolbar" onclick="replyTo('reply')">↩ Responder</button>
                     <button class="btn-toolbar" onclick="replyTo('reply_all')">↩ Resp. todos</button>
                     <button class="btn-toolbar" onclick="replyTo('forward')">↪ Reenviar</button>
+                    <button class="btn-toolbar" onclick="markAsSpam('${m.id}')">🚫 Marcar SPAM</button>
                     <button class="btn-toolbar" onclick="toggleRead('${m.id}', ${m.is_read ? 'true' : 'false'})">${m.is_read ? 'Marcar no leído' : 'Marcar leído'}</button>
                     <button class="btn-toolbar" onclick="deleteMsg('${m.id}')">🗑️ Eliminar</button>
                 </div>
@@ -206,6 +223,7 @@ async function loadMessages(reset = true) {
     if (S.selectedAccount) params.set('account_id', S.selectedAccount);
     if (S.filter === 'starred') params.set('starred', '1');
     else if (S.filter === 'deleted') params.set('deleted', '1');
+    else if (['Interesantes', 'Servicios', 'EnCopia', 'SPAM'].includes(S.filter)) params.set('folder', S.filter);
     else if (S.filter !== 'all') params.set('label', S.filter);
     if (S.dateFrom) params.set('date_from', S.dateFrom);
     if (S.dateTo) params.set('date_to', S.dateTo);
@@ -222,6 +240,7 @@ async function loadMessages(reset = true) {
     S.hasMore = msgs.length === 50;
     S.page++;
     renderMessages();
+    loadUnreadCounts();
 }
 
 /* ── Load accounts ──────────────────────────────────────────────── */
@@ -278,6 +297,42 @@ window.toggleRead = async function (id, current) {
     renderMessages();
 };
 
+async function setMessageFolderByDrop(messageId, targetFilter) {
+    if (!messageId || !targetFilter || targetFilter === 'all') return;
+
+    if (targetFilter === 'deleted') {
+        return deleteMsg(messageId);
+    }
+
+    if (targetFilter === 'starred') {
+        const msg = S.messages.find(m => m.id === messageId);
+        return toggleStar({ stopPropagation() {} }, messageId, !!msg?.is_starred);
+    }
+
+    const allowedLabels = ['Interesantes', 'Servicios', 'EnCopia', 'SPAM'];
+    if (!allowedLabels.includes(targetFilter)) return;
+
+    const r = await api('PUT', `/messages/${messageId}/classify`, { classification_label: targetFilter });
+    if (!r?.ok) {
+        toast('No se pudo mover el mensaje', 'error');
+        return;
+    }
+
+    S.messages = S.messages.filter(m => m.id !== messageId);
+    renderMessages();
+    loadUnreadCounts();
+    toast(`Mensaje movido a ${targetFilter}`, 'success');
+}
+
+window.markAsSpam = async function (id) {
+    await setMessageFolderByDrop(id, 'SPAM');
+};
+
+window.onMessageDragStart = function (e, id) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+};
+
 /* ── Delete message ─────────────────────────────────────────────── */
 window.deleteMsg = async function (id) {
     const r = await api('DELETE', `/messages/${id}`);
@@ -285,6 +340,7 @@ window.deleteMsg = async function (id) {
         S.messages = S.messages.filter(m => m.id !== id);
         closeViewer();
         renderMessages();
+        loadUnreadCounts();
         toast('Mensaje eliminado', 'success');
     } else {
         toast('Error al eliminar', 'error');
@@ -554,6 +610,8 @@ function openAccountModal(acc = null) {
     document.getElementById('acc-smtp-host').value = acc?.smtp_host || '';
     document.getElementById('acc-smtp-port').value = acc?.smtp_port || 587;
     document.getElementById('acc-smtp-ssl').value = acc?.smtp_ssl ? '1' : '0';
+    document.getElementById('acc-owner-profile').value = acc?.owner_profile || '';
+    document.getElementById('acc-custom-classification-prompt').value = acc?.custom_classification_prompt || '';
     document.getElementById('modal-account').style.display = 'flex';
 }
 
@@ -573,6 +631,8 @@ async function saveAccount() {
         smtp_port: parseInt(document.getElementById('acc-smtp-port').value),
         ssl_verify: document.getElementById('acc-imap-ssl').value === '1',
         protocol: inferredProtocol,
+        owner_profile: document.getElementById('acc-owner-profile').value.trim(),
+        custom_classification_prompt: document.getElementById('acc-custom-classification-prompt').value.trim(),
     };
     if (!body.email_address) { toast('El email es obligatorio', 'error'); return; }
 
@@ -604,6 +664,7 @@ async function markAllRead() {
     if (r?.ok) {
         S.messages.forEach(m => m.is_read = true);
         renderMessages();
+        loadUnreadCounts();
         toast('Todos marcados como leídos', 'success');
     } else {
         toast('Error', 'error');
@@ -620,6 +681,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await loadAccounts();
     await loadMessages();
+    await loadUnreadCounts();
     await refreshAiHealth();
 
     // Sidebar buttons
@@ -652,11 +714,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('.folder-item').forEach(el => {
         el.addEventListener('click', () => {
             S.filter = el.dataset.filter;
-            S.selectedAccount = null;
             renderAccounts();
             renderFolders();
             closeViewer();
             loadMessages();
+        });
+
+        el.addEventListener('dragover', (ev) => {
+            ev.preventDefault();
+            el.classList.add('drop-target');
+        });
+        el.addEventListener('dragleave', () => {
+            el.classList.remove('drop-target');
+        });
+        el.addEventListener('drop', async (ev) => {
+            ev.preventDefault();
+            el.classList.remove('drop-target');
+            const messageId = ev.dataTransfer.getData('text/plain');
+            const targetFilter = el.dataset.filter;
+            await setMessageFolderByDrop(messageId, targetFilter);
         });
     });
 

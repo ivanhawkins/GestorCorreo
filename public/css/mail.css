@@ -223,6 +223,11 @@ select.form-control option { background: var(--surface); }
 }
 .folder-item:hover { background: var(--surface-hover); color: var(--text); }
 .folder-item.active { background: var(--accent-muted); color: #93b4fd; font-weight: 500; }
+.folder-item.drop-target {
+    background: rgba(37,99,235,.2);
+    outline: 1px dashed rgba(147,180,253,.8);
+    color: #93b4fd;
+}
 
 .unread-badge {
     background: var(--accent); color: #fff; font-size: .65rem; font-weight: 600;
@@ -303,6 +308,8 @@ select.form-control option { background: var(--surface); }
     column-gap: .75rem;
 }
 .message-item:hover { background: var(--surface-hover); }
+.message-item[draggable="true"] { cursor: grab; }
+.message-item[draggable="true"]:active { cursor: grabbing; }
 .message-item.active {
     background: var(--accent-muted);
     border-left: 2px solid var(--accent);

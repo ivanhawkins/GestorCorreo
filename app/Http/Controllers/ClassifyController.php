@@ -84,6 +84,16 @@ class ClassifyController extends Controller
             ['final_label' => $label, 'decided_by' => 'manual', 'final_reason' => 'Etiquetado manualmente']
         );
 
+        $normalized = strtolower(trim((string)$label));
+        $message->folder = match ($normalized) {
+            'spam' => 'SPAM',
+            'interesantes' => 'Interesantes',
+            'servicios' => 'Servicios',
+            'encopia' => 'EnCopia',
+            default => 'INBOX',
+        };
+        $message->save();
+
         return response()->json(['updated' => 1, 'classification' => $classification]);
     }
 

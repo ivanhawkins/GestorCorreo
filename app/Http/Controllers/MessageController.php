@@ -11,6 +11,41 @@ use Illuminate\Support\Facades\Storage;
 
 class MessageController extends Controller
 {
+    public function unreadCounts(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $accountIds = Account::where('user_id', $user->id)
+            ->where('is_deleted', false)
+            ->pluck('id');
+
+        $query = Message::whereIn('account_id', $accountIds)->where('is_read', false);
+        if ($request->filled('account_id')) {
+            $accountId = (int)$request->query('account_id');
+            if (!$accountIds->contains($accountId)) {
+                return response()->json(['error' => 'Cuenta no autorizada.'], 403);
+            }
+            $query->where('account_id', $accountId);
+        }
+
+        $countsByFolder = $query->selectRaw('folder, COUNT(*) as total')
+            ->groupBy('folder')
+            ->pluck('total', 'folder');
+
+        return response()->json([
+            'all' => (int)$query->count(),
+            'starred' => (int)Message::whereIn('account_id', $accountIds)
+                ->where('is_read', false)
+                ->where('is_starred', true)
+                ->when($request->filled('account_id'), fn($q) => $q->where('account_id', (int)$request->query('account_id')))
+                ->count(),
+            'Interesantes' => (int)($countsByFolder['Interesantes'] ?? 0),
+            'Servicios' => (int)($countsByFolder['Servicios'] ?? 0),
+            'EnCopia' => (int)($countsByFolder['EnCopia'] ?? 0),
+            'SPAM' => (int)($countsByFolder['SPAM'] ?? 0),
+            'deleted' => (int)($countsByFolder['deleted'] ?? 0),
+        ]);
+    }
+
     /**
      * GET /messages
      * Lista mensajes con filtros: account_id, folder, category, search, page.

@@ -40,6 +40,18 @@ class ClassificationService
         ],
     ];
 
+    private function mapLabelToFolder(?string $label): string
+    {
+        $normalized = strtolower(trim((string)$label));
+        return match ($normalized) {
+            'spam' => 'SPAM',
+            'interesantes' => 'Interesantes',
+            'servicios' => 'Servicios',
+            'encopia' => 'EnCopia',
+            default => 'INBOX',
+        };
+    }
+
     /**
      * Clasifica un mensaje y guarda el resultado en la BD.
      *
@@ -108,6 +120,10 @@ class ClassificationService
                 ['message_id' => $message->id],
                 $classificationData
             );
+
+            // Reflejar la clasificación en la carpeta visible del mensaje.
+            $message->folder = $this->mapLabelToFolder($classification->final_label);
+            $message->save();
 
             return $classification;
         } catch (\Throwable $e) {

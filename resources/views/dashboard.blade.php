@@ -44,12 +44,12 @@
                 <div class="folder-item active" data-filter="all">
                     Bandeja de entrada <span class="total-count" id="count-all"></span>
                 </div>
-                <div class="folder-item" data-filter="starred">Destacados</div>
-                <div class="folder-item" data-filter="Interesantes">Interesantes</div>
-                <div class="folder-item" data-filter="Servicios">Servicios</div>
-                <div class="folder-item" data-filter="EnCopia">En copia</div>
-                <div class="folder-item" data-filter="SPAM">SPAM</div>
-                <div class="folder-item" data-filter="deleted">Eliminados</div>
+                <div class="folder-item" data-filter="starred">Destacados <span class="total-count" id="count-starred"></span></div>
+                <div class="folder-item" data-filter="Interesantes">Interesantes <span class="total-count" id="count-Interesantes"></span></div>
+                <div class="folder-item" data-filter="Servicios">Servicios <span class="total-count" id="count-Servicios"></span></div>
+                <div class="folder-item" data-filter="EnCopia">En copia <span class="total-count" id="count-EnCopia"></span></div>
+                <div class="folder-item" data-filter="SPAM">SPAM <span class="total-count" id="count-SPAM"></span></div>
+                <div class="folder-item" data-filter="deleted">Eliminados <span class="total-count" id="count-deleted"></span></div>
             </div>
         </div>
 
@@ -209,6 +209,17 @@
                         <option value="0">Ninguno</option>
                     </select>
                 </div>
+            </div>
+
+            <hr class="form-divider">
+            <p class="form-section-title">Personalización IA</p>
+            <div class="form-group">
+                <label>Tu perfil / forma de escribir</label>
+                <textarea id="acc-owner-profile" class="form-control" rows="3" placeholder="Ej: Respuestas breves, cercanas, tono profesional, español de España."></textarea>
+            </div>
+            <div class="form-group">
+                <label>Prompt de clasificación personalizado</label>
+                <textarea id="acc-custom-classification-prompt" class="form-control" rows="3" placeholder="Instrucciones extra para clasificar correos de esta cuenta."></textarea>
             </div>
         </div>
         <div class="modal-footer">
