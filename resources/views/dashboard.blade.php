@@ -44,6 +44,7 @@
                 <div class="folder-item active" data-filter="all">
                     Bandeja de entrada <span class="total-count" id="count-all"></span>
                 </div>
+                <div class="folder-item" data-filter="Sent">Enviados <span class="total-count" id="count-Sent"></span></div>
                 <div class="folder-item" data-filter="starred">Destacados <span class="total-count" id="count-starred"></span></div>
                 <div class="folder-item" data-filter="Interesantes">Interesantes <span class="total-count" id="count-Interesantes"></span></div>
                 <div class="folder-item" data-filter="Servicios">Servicios <span class="total-count" id="count-Servicios"></span></div>

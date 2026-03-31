@@ -125,6 +125,8 @@ Perfil del remitente: {$ownerProfile}
 
 Redacta una respuesta al siguiente email siguiendo la instrucción del usuario.
 Devuelve SOLO el texto del email de respuesta, sin asunto, sin encabezados, sin explicaciones.
+NO uses placeholders ni campos entre corchetes o llaves (ejemplos prohibidos: [Tu nombre], [Nombre], {firma}, {empresa}).
+El texto debe quedar final y utilizable tal cual, sin pedir datos adicionales.
 
 Email original:
 - De: {$originalFromName} <{$originalFromEmail}>

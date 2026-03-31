@@ -119,7 +119,7 @@ async function loadUnreadCounts() {
     const r = await api('GET', '/messages/unread-counts');
     if (!r?.ok) return;
     const c = r.data || {};
-    const ids = ['all', 'starred', 'Interesantes', 'Servicios', 'EnCopia', 'SPAM', 'deleted'];
+    const ids = ['all', 'Sent', 'starred', 'Interesantes', 'Servicios', 'EnCopia', 'SPAM', 'deleted'];
     ids.forEach((k) => {
         const el = document.getElementById(`count-${k}`);
         if (!el) return;
@@ -222,7 +222,7 @@ async function loadMessages(reset = true) {
     if (S.selectedAccount) params.set('account_id', S.selectedAccount);
     if (S.filter === 'starred') params.set('starred', '1');
     else if (S.filter === 'deleted') params.set('deleted', '1');
-    else if (['Interesantes', 'Servicios', 'EnCopia', 'SPAM'].includes(S.filter)) params.set('folder', S.filter);
+    else if (['Sent', 'Interesantes', 'Servicios', 'EnCopia', 'SPAM'].includes(S.filter)) params.set('folder', S.filter);
     else if (S.filter !== 'all') params.set('label', S.filter);
     if (S.dateFrom) params.set('date_from', S.dateFrom);
     if (S.dateTo) params.set('date_to', S.dateTo);

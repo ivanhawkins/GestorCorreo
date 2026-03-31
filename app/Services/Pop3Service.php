@@ -291,9 +291,20 @@ class Pop3Service
             $encoding = strtolower($h['content-transfer-encoding'] ?? '');
             $decoded = $this->decodeTransfer($b, $encoding);
             $disp = strtolower($h['content-disposition'] ?? '');
+            $filename = $this->extractFilename($h['content-disposition'] ?? '', $h['content-type'] ?? '');
 
-            if (str_contains($disp, 'attachment')) {
-                $filename = $this->extractFilename($h['content-disposition'] ?? '', $h['content-type'] ?? '');
+            if (str_contains($ctype, 'multipart/')) {
+                $childBoundary = $this->extractBoundary($h['content-type'] ?? '');
+                if ($childBoundary) {
+                    [$childText, $childHtml, $childAttachments] = $this->parseMultipartBody($decoded, $childBoundary);
+                    if ($text === '' && $childText !== '') $text = $childText;
+                    if ($html === '' && $childHtml !== '') $html = $childHtml;
+                    if (!empty($childAttachments)) $attachments = array_merge($attachments, $childAttachments);
+                }
+                continue;
+            }
+
+            if (str_contains($disp, 'attachment') || ($filename !== '' && !str_contains($ctype, 'text/'))) {
                 $attachments[] = [
                     'filename'   => $filename ?: ('attachment_' . uniqid('', true)),
                     'mime_type'  => explode(';', $h['content-type'] ?? 'application/octet-stream')[0],

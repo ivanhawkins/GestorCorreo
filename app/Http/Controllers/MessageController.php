@@ -33,6 +33,7 @@ class MessageController extends Controller
             'Interesantes' => (int)($countsByFolder['Interesantes'] ?? 0),
             'Servicios' => (int)($countsByFolder['Servicios'] ?? 0),
             'EnCopia' => (int)($countsByFolder['EnCopia'] ?? 0),
+            'Sent' => (int)($countsByFolder['Sent'] ?? 0),
             'SPAM' => (int)($countsByFolder['SPAM'] ?? 0),
             'deleted' => (int)($countsByFolder['deleted'] ?? 0),
         ]);

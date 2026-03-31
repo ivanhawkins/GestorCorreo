@@ -3,11 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\Attachment;
 use App\Models\AuditLog;
+use App\Models\Message;
 use App\Services\EncryptionService;
 use App\Services\SmtpService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class SendController extends Controller
 {
@@ -116,6 +120,55 @@ class SendController extends Controller
 
         if ($result['status'] === 'error') {
             return response()->json(['error' => $result['message']], 500);
+        }
+
+        // Guardar una copia en carpeta "Sent"
+        try {
+            $messageId = (string) Str::uuid();
+            $sentMessage = Message::create([
+                'id'              => $messageId,
+                'account_id'      => $account->id,
+                'imap_uid'        => null,
+                'message_id'      => '<local-sent-' . $messageId . '@hawkins.mail>',
+                'subject'         => $validated['subject'],
+                'from_name'       => '',
+                'from_email'      => $account->email_address,
+                'to_addresses'    => is_string($validated['to']) ? json_encode([['name' => '', 'email' => $validated['to']]]) : json_encode($validated['to']),
+                'cc_addresses'    => !empty($validated['cc']) ? (is_string($validated['cc']) ? json_encode([['name' => '', 'email' => $validated['cc']]]) : json_encode($validated['cc'])) : '[]',
+                'date'            => now(),
+                'snippet'         => mb_substr(strip_tags((string)($validated['body_text'] ?? '')), 0, 200),
+                'folder'          => 'Sent',
+                'body_text'       => $validated['body_text'] ?? '',
+                'body_html'       => $validated['body_html'] ?? '',
+                'has_attachments' => !empty($emailData['attachments']),
+                'is_read'         => true,
+                'is_starred'      => false,
+                'created_at'      => now(),
+            ]);
+
+            if (!empty($emailData['attachments']) && is_array($emailData['attachments'])) {
+                foreach ($emailData['attachments'] as $attachmentData) {
+                    $filename = $attachmentData['name'] ?? ('attachment_' . uniqid());
+                    $content = $attachmentData['content'] ?? '';
+                    $mimeType = $attachmentData['mime_type'] ?? 'application/octet-stream';
+                    $sizeBytes = strlen($content);
+                    $safeMessageId = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $sentMessage->id);
+                    $safeFilename = preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', basename($filename));
+                    $uniqueFilename = uniqid('', true) . '_' . $safeFilename;
+                    $relativePath = 'attachments/' . $safeMessageId . '/' . $uniqueFilename;
+                    Storage::disk('public')->put($relativePath, $content);
+
+                    Attachment::create([
+                        'message_id' => $sentMessage->id,
+                        'filename'   => $filename,
+                        'mime_type'  => $mimeType,
+                        'size_bytes' => $sizeBytes,
+                        'local_path' => 'public/' . $relativePath,
+                    ]);
+                }
+            }
+        } catch (\Throwable) {
+            // No bloquear envío si falla el guardado local en "Sent"
         }
 
         return response()->json([
