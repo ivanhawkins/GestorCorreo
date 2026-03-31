@@ -94,12 +94,24 @@ class AuthController extends Controller
             $finalIsAdmin = true;
         }
 
-        $user = User::create([
-            'username'      => $validated['username'],
-            'password_hash' => bcrypt($validated['password']),
-            'is_active'     => true,
-            'is_admin'      => $finalIsAdmin,
-        ]);
+        // Si existe un usuario borrado lógicamente, lo restauramos
+        $existingUser = User::withTrashed()->where('username', $validated['username'])->first();
+
+        if ($existingUser && $existingUser->trashed()) {
+            $existingUser->restore();
+            $existingUser->password_hash = bcrypt($validated['password']);
+            $existingUser->is_active = true;
+            $existingUser->is_admin = $finalIsAdmin;
+            $existingUser->save();
+            $user = $existingUser;
+        } else {
+            $user = User::create([
+                'username'      => $validated['username'],
+                'password_hash' => bcrypt($validated['password']),
+                'is_active'     => true,
+                'is_admin'      => $finalIsAdmin,
+            ]);
+        }
 
         $token = $user->createToken('api-token')->plainTextToken;
 
