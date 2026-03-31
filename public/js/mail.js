@@ -617,12 +617,12 @@ async function saveAccount() {
     const emailStr = document.getElementById('acc-email').value.trim();
     const imapHost = document.getElementById('acc-imap-host').value.trim();
     const imapPort = parseInt(document.getElementById('acc-imap-port').value);
+    const rawPassword = document.getElementById('acc-password').value;
     const inferredProtocol = (imapHost.toLowerCase().startsWith('pop.') || [110, 995].includes(imapPort)) ? 'pop3' : 'imap';
     const body = {
         name: document.getElementById('acc-name').value.trim(),
         email_address: emailStr,
         username: emailStr, // Generalmente se usa el email como usuario en IMAP
-        password: document.getElementById('acc-password').value,
         imap_host: imapHost,
         imap_port: imapPort,
         smtp_host: document.getElementById('acc-smtp-host').value.trim(),
@@ -632,6 +632,9 @@ async function saveAccount() {
         owner_profile: document.getElementById('acc-owner-profile').value.trim(),
         custom_classification_prompt: document.getElementById('acc-custom-classification-prompt').value.trim(),
     };
+    if (rawPassword && rawPassword.trim() !== '') {
+        body.password = rawPassword;
+    }
     if (!body.email_address) { toast('El email es obligatorio', 'error'); return; }
 
     const btn = document.getElementById('btn-save-account');

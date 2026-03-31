@@ -199,6 +199,7 @@ class Pop3Service
 
         $headers = $this->parseHeaders($rawHeaders);
         $contentType = strtolower($headers['content-type'] ?? 'text/plain');
+        $mainBoundary = $this->extractBoundary($headers['content-type'] ?? '');
 
         $bodyText = '';
         $bodyHtml = '';
@@ -222,6 +223,10 @@ class Pop3Service
         if ($bodyText === '' && $bodyHtml !== '') {
             $bodyText = trim(strip_tags($bodyHtml));
         }
+
+        // Algunos servidores/formatos dejan el boundary MIME en el cuerpo final.
+        $bodyText = $this->stripMimeBoundaryArtifacts($bodyText, $mainBoundary);
+        $bodyHtml = $this->stripMimeBoundaryArtifacts($bodyHtml, $mainBoundary);
 
         return [
             'message_id'  => trim((string)($headers['message-id'] ?? '')),
@@ -343,6 +348,26 @@ class Pop3Service
             return mb_decode_mimeheader($value);
         }
         return $value;
+    }
+
+    private function stripMimeBoundaryArtifacts(string $content, ?string $boundary): string
+    {
+        if ($content === '') {
+            return $content;
+        }
+
+        $clean = $content;
+
+        if (!empty($boundary)) {
+            $quoted = preg_quote($boundary, '/');
+            $clean = preg_replace('/^\s*--' . $quoted . '(?:--)?\s*$/m', '', $clean) ?? $clean;
+        }
+
+        // Limpieza defensiva para delimitadores residuales genéricos.
+        $clean = preg_replace('/^\s*--[A-Za-z0-9_=\-]{12,}(?:--)?\s*$/m', '', $clean) ?? $clean;
+        $clean = preg_replace("/(\r?\n){3,}/", "\n\n", $clean) ?? $clean;
+
+        return trim($clean);
     }
 
     private function parseAddressList(string $raw): array

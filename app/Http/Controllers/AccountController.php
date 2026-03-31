@@ -261,7 +261,7 @@ class AccountController extends Controller
             'smtp_host'                     => 'sometimes|string|max:255',
             'smtp_port'                     => 'sometimes|integer|min:1|max:65535',
             'username'                      => 'sometimes|string|max:255',
-            'password'                      => 'sometimes|string',
+            'password'                      => 'sometimes|nullable|string',
             'protocol'                      => 'sometimes|in:imap,pop3',
             'is_active'                     => 'sometimes|boolean',
             'ssl_verify'                    => 'sometimes|boolean',
@@ -274,10 +274,10 @@ class AccountController extends Controller
         ]);
 
         // Si viene nueva password, encriptarla
-        if (isset($validated['password'])) {
+        if (isset($validated['password']) && trim((string)$validated['password']) !== '') {
             $validated['encrypted_password'] = $this->encryption->encrypt($validated['password']);
-            unset($validated['password']);
         }
+        unset($validated['password']);
 
         if (
             array_key_exists('protocol', $validated) ||
