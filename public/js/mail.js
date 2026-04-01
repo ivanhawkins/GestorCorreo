@@ -143,13 +143,15 @@ function renderMessages() {
              onclick="openMessage('${m.id}')" ondblclick="openMessageLarge('${m.id}')">
             <div class="message-from">
                 ${m.is_read ? '' : '<span title="No leído">🔵</span>'}
-                ${escHtml(m.from_name || m.from_email || '')}
+                ${escHtml(m.folder === 'Sent' ? (`Para: ${getPrimaryTo(m) || '(sin destinatario)'}`) : (m.from_name || m.from_email || ''))}
                 ${badge(m.classification_label)}
             </div>
             <div class="message-date">${fmtDate(m.date)}</div>
             <div class="message-subject">${escHtml(m.subject || '(Sin asunto)')}</div>
             <div class="message-snippet">${escHtml(m.snippet || '')}</div>
             <div class="message-meta">
+                ${(String(m.subject || '').trim().toLowerCase().startsWith('fwd:') || String(m.subject || '').trim().toLowerCase().startsWith('fw:')) ? '<span title="Reenviado">↪</span>' : ''}
+                ${String(m.subject || '').trim().toLowerCase().startsWith('re:') ? '<span title="Respondido">↩</span>' : ''}
                 ${m.has_attachments ? '<span>📎</span>' : ''}
                 <button class="btn-star" onclick="toggleStar(event,'${m.id}',${m.is_starred})"
                     title="${m.is_starred ? 'Quitar estrella' : 'Marcar'}">${m.is_starred ? '⭐' : '☆'}</button>
@@ -190,9 +192,22 @@ function normalizeBodyTextForReply(rawText, rawHtml) {
     return text.trim();
 }
 
+function parseAddressList(raw) {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string') {
+        try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) return parsed;
+        } catch (_) {}
+        return raw.split(',').map(s => ({ name: '', email: s.trim() })).filter(x => x.email);
+    }
+    return [];
+}
+
 function getPrimaryTo(message) {
-    const to = message?.to_addresses;
-    if (Array.isArray(to) && to.length) {
+    const to = parseAddressList(message?.to_addresses);
+    if (to.length) {
         if (typeof to[0] === 'string') return to[0];
         if (to[0] && typeof to[0] === 'object') return to[0].email || '';
     }
@@ -284,7 +299,8 @@ async function loadMessages(reset = true) {
 
     const params = new URLSearchParams({ page: S.page, per_page: 50 });
     if (S.selectedAccount) params.set('account_id', S.selectedAccount);
-    if (S.filter === 'starred') params.set('starred', '1');
+    if (S.filter === 'all') params.set('folder', 'INBOX');
+    else if (S.filter === 'starred') params.set('starred', '1');
     else if (S.filter === 'deleted') params.set('deleted', '1');
     else if (['Sent', 'Interesantes', 'Servicios', 'EnCopia', 'SPAM'].includes(S.filter)) params.set('folder', S.filter);
     else if (S.filter !== 'all') params.set('label', S.filter);
