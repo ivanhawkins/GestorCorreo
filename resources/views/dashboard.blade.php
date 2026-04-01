@@ -229,6 +229,10 @@
                 <textarea id="acc-custom-classification-prompt" class="form-control" rows="3" placeholder="Instrucciones extra para clasificar correos de esta cuenta."></textarea>
             </div>
             <div class="form-group">
+                <label>Firma HTML (se añade siempre al enviar)</label>
+                <textarea id="acc-signature-html" class="form-control" rows="5" placeholder="<p>Un saludo,<br>Tu nombre</p>"></textarea>
+            </div>
+            <div class="form-group">
                 <label>Tamaño de letra del panel</label>
                 <select id="acc-font-size" class="form-control">
                     <option value="12">Pequeño</option>

@@ -37,6 +37,7 @@ class SendController extends Controller
             'body_html'  => 'sometimes|nullable|string',
             'reply_to'   => 'sometimes|nullable|string|email',
             'reply_to_message_id' => 'sometimes|nullable|string|exists:messages,id',
+            'compose_mode' => 'sometimes|nullable|in:new,reply,reply_all,forward',
             'attachments' => 'sometimes|array',
             'attachments.*.name' => 'required_with:attachments|string|max:255',
             'attachments.*.mime_type' => 'sometimes|nullable|string|max:120',
@@ -81,25 +82,18 @@ class SendController extends Controller
             $emailData['reply_to'] = $validated['reply_to'];
         }
 
+        $composeMode = (string)($validated['compose_mode'] ?? 'new');
+        $original = null;
         if (!empty($validated['reply_to_message_id'])) {
             $original = Message::where('id', $validated['reply_to_message_id'])
                 ->where('account_id', $account->id)
                 ->first();
             if ($original) {
-                $cleanOriginalBody = $this->normalizeQuotedOriginalBody(
-                    (string)($original->body_text ?? ''),
-                    (string)($original->body_html ?? '')
-                );
-                $quoted = "\n\n-------- Mensaje original --------\n"
-                    . "De: " . ($original->from_email ?? '') . "\n"
-                    . "Fecha: " . ($original->date ? $original->date->toDateTimeString() : '') . "\n"
-                    . "Asunto: " . ($original->subject ?? '') . "\n\n"
-                    . $cleanOriginalBody;
-                if (!str_contains((string)$emailData['body_text'], '-------- Mensaje original --------')) {
-                    $emailData['body_text'] = ($emailData['body_text'] ?? '') . $quoted;
-                }
+                $emailData = $this->appendQuotedOriginalForMode($emailData, $original, $composeMode);
             }
         }
+
+        $emailData = $this->appendAccountSignature($emailData, (string)($account->signature_html ?? ''));
 
         if (!empty($validated['attachments']) && is_array($validated['attachments'])) {
             $emailData['attachments'] = [];
@@ -164,8 +158,23 @@ class SendController extends Controller
                 'has_attachments' => !empty($emailData['attachments']),
                 'is_read'         => true,
                 'is_starred'      => false,
+                'is_replied'      => in_array($composeMode, ['reply', 'reply_all'], true),
+                'is_forwarded'    => $composeMode === 'forward',
+                'replied_at'      => in_array($composeMode, ['reply', 'reply_all'], true) ? now() : null,
+                'forwarded_at'    => $composeMode === 'forward' ? now() : null,
                 'created_at'      => now(),
             ]);
+
+            if ($original) {
+                if ($composeMode === 'forward') {
+                    $original->is_forwarded = true;
+                    $original->forwarded_at = now();
+                } elseif (in_array($composeMode, ['reply', 'reply_all'], true)) {
+                    $original->is_replied = true;
+                    $original->replied_at = now();
+                }
+                $original->save();
+            }
 
             if (!empty($emailData['attachments']) && is_array($emailData['attachments'])) {
                 foreach ($emailData['attachments'] as $attachmentData) {
@@ -269,5 +278,78 @@ class SendController extends Controller
         $text = preg_replace("/\n{3,}/", "\n\n", $text) ?? $text;
 
         return trim($text);
+    }
+
+    private function appendAccountSignature(array $emailData, string $signatureHtml): array
+    {
+        $signatureHtml = trim($signatureHtml);
+        if ($signatureHtml === '') {
+            return $emailData;
+        }
+
+        $bodyText = (string)($emailData['body_text'] ?? '');
+        $bodyHtml = (string)($emailData['body_html'] ?? '');
+
+        $signatureText = trim(html_entity_decode(
+            strip_tags(preg_replace('/<br\s*\/?>/i', "\n", $signatureHtml) ?? $signatureHtml),
+            ENT_QUOTES | ENT_HTML5,
+            'UTF-8'
+        ));
+
+        if ($signatureText !== '' && !str_contains($bodyText, $signatureText)) {
+            $bodyText = rtrim($bodyText) . "\n\n" . $signatureText;
+        }
+
+        if ($bodyHtml === '') {
+            $escaped = htmlspecialchars($bodyText, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $bodyHtml = nl2br($escaped);
+        }
+        if (!str_contains($bodyHtml, $signatureHtml)) {
+            $bodyHtml = rtrim($bodyHtml) . '<br><br>' . $signatureHtml;
+        }
+
+        $emailData['body_text'] = $bodyText;
+        $emailData['body_html'] = $bodyHtml;
+        return $emailData;
+    }
+
+    private function appendQuotedOriginalForMode(array $emailData, Message $original, string $mode): array
+    {
+        $cleanOriginalBody = $this->normalizeQuotedOriginalBody(
+            (string)($original->body_text ?? ''),
+            (string)($original->body_html ?? '')
+        );
+        $isForward = $mode === 'forward';
+        $title = $isForward ? '-------- Mensaje reenviado --------' : '-------- Mensaje original --------';
+
+        $quotedText = "\n\n{$title}\n"
+            . "De: " . ($original->from_email ?? '') . "\n"
+            . "Fecha: " . ($original->date ? $original->date->toDateTimeString() : '') . "\n"
+            . "Asunto: " . ($original->subject ?? '') . "\n\n"
+            . $cleanOriginalBody;
+
+        if (!str_contains((string)($emailData['body_text'] ?? ''), $title)) {
+            $emailData['body_text'] = (string)($emailData['body_text'] ?? '') . $quotedText;
+        }
+
+        $from = htmlspecialchars((string)($original->from_email ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $date = htmlspecialchars((string)($original->date ? $original->date->toDateTimeString() : ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $subject = htmlspecialchars((string)($original->subject ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $body = nl2br(htmlspecialchars($cleanOriginalBody, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
+        $headerText = $isForward ? 'Mensaje reenviado' : 'Mensaje original';
+
+        $quotedHtml = '<div style="margin-top:16px;padding:12px;border-left:3px solid #d1d5db;background:#f9fafb;color:#111827">'
+            . '<div style="font-weight:600;margin-bottom:6px">' . $headerText . '</div>'
+            . '<div><strong>De:</strong> ' . $from . '</div>'
+            . '<div><strong>Fecha:</strong> ' . $date . '</div>'
+            . '<div><strong>Asunto:</strong> ' . $subject . '</div>'
+            . '<div style="margin-top:10px;white-space:normal">' . $body . '</div>'
+            . '</div>';
+
+        if (!str_contains((string)($emailData['body_html'] ?? ''), $headerText)) {
+            $emailData['body_html'] = (string)($emailData['body_html'] ?? '') . $quotedHtml;
+        }
+
+        return $emailData;
     }
 }

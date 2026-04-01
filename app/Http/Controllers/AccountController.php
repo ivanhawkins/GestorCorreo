@@ -122,6 +122,7 @@ class AccountController extends Controller
             'auto_sync_interval'            => 'sometimes|integer|min:0',
             'custom_classification_prompt'  => 'sometimes|nullable|string',
             'owner_profile'                 => 'sometimes|nullable|string|max:1000',
+            'signature_html'                => 'sometimes|nullable|string|max:20000',
             'mailbox_storage_limit'         => 'sometimes|integer|min:0',
         ]);
 
@@ -144,6 +145,7 @@ class AccountController extends Controller
             'auto_sync_interval'            => $validated['auto_sync_interval'] ?? 0,
             'custom_classification_prompt'  => $validated['custom_classification_prompt'] ?? null,
             'owner_profile'                 => $validated['owner_profile']      ?? null,
+            'signature_html'                => $validated['signature_html']     ?? null,
             'mailbox_storage_limit'         => $validated['mailbox_storage_limit'] ?? 0,
             'is_deleted'                    => false,
         ]);
@@ -202,6 +204,7 @@ class AccountController extends Controller
             'auto_sync_interval'            => 'sometimes|integer|min:0',
             'custom_classification_prompt'  => 'sometimes|nullable|string',
             'owner_profile'                 => 'sometimes|nullable|string|max:1000',
+            'signature_html'                => 'sometimes|nullable|string|max:20000',
             'mailbox_storage_limit'         => 'sometimes|integer|min:0',
         ]);
 
@@ -228,6 +231,7 @@ class AccountController extends Controller
             'auto_sync_interval'            => $validated['auto_sync_interval'] ?? 0,
             'custom_classification_prompt'  => $validated['custom_classification_prompt'] ?? null,
             'owner_profile'                 => $validated['owner_profile']      ?? null,
+            'signature_html'                => $validated['signature_html']     ?? null,
             'mailbox_storage_limit'         => $validated['mailbox_storage_limit'] ?? 0,
             'is_deleted'                    => false,
         ]);
@@ -288,6 +292,7 @@ class AccountController extends Controller
             'auto_sync_interval'            => 'sometimes|integer|min:0',
             'custom_classification_prompt'  => 'sometimes|nullable|string',
             'owner_profile'                 => 'sometimes|nullable|string|max:1000',
+            'signature_html'                => 'sometimes|nullable|string|max:20000',
             'mailbox_storage_limit'         => 'sometimes|integer|min:0',
         ]);
 

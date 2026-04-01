@@ -48,6 +48,10 @@ class Message extends Model
         'has_attachments',
         'is_read',
         'is_starred',
+        'is_replied',
+        'is_forwarded',
+        'replied_at',
+        'forwarded_at',
         'created_at',
     ];
 
@@ -58,6 +62,10 @@ class Message extends Model
         'has_attachments' => 'boolean',
         'is_read'         => 'boolean',
         'is_starred'      => 'boolean',
+        'is_replied'      => 'boolean',
+        'is_forwarded'    => 'boolean',
+        'replied_at'      => 'datetime',
+        'forwarded_at'    => 'datetime',
         'date'            => 'datetime',
         'created_at'      => 'datetime',
         'imap_uid'        => 'integer',

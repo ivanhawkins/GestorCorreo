@@ -30,6 +30,7 @@ class Account extends Model
         'custom_classification_prompt',
         'custom_review_prompt',
         'owner_profile',
+        'signature_html',
         'last_sync_error',
         'is_deleted',
         'protocol',

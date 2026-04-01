@@ -269,6 +269,7 @@ function isSentLikeMessage(message) {
 }
 
 function isForwardedMessage(message) {
+    if (message?.is_forwarded) return true;
     if (!isSentLikeMessage(message)) return false;
     const subject = String(message?.subject || '').trim().toLowerCase();
     const snippet = String(message?.snippet || '').toLowerCase();
@@ -276,6 +277,7 @@ function isForwardedMessage(message) {
 }
 
 function isRepliedMessage(message) {
+    if (message?.is_replied) return true;
     if (!isSentLikeMessage(message)) return false;
     const subject = String(message?.subject || '').trim().toLowerCase();
     const snippet = String(message?.snippet || '').toLowerCase();
@@ -821,6 +823,7 @@ async function sendEmail() {
     btn.disabled = true; btn.textContent = 'Enviando…';
 
     const payload = { account_id: accountId, to, subject, body_text: body };
+    payload.compose_mode = _composeContext?.mode || 'new';
     if (cc) payload.cc = cc;
     if (_composeContext?.originalMsg?.id) payload.reply_to_message_id = _composeContext.originalMsg.id;
     if (files.length) {
@@ -838,6 +841,7 @@ async function sendEmail() {
         toast('Mensaje enviado', 'success');
         document.getElementById('modal-compose').style.display = 'none';
         document.getElementById('compose-files').value = '';
+        await doSync();
     } else {
         toast(r?.data?.message || 'Error al enviar', 'error');
     }
@@ -878,6 +882,7 @@ function openAccountModal(acc = null) {
     document.getElementById('acc-smtp-ssl').value = acc?.smtp_ssl ? '1' : '0';
     document.getElementById('acc-owner-profile').value = acc?.owner_profile || '';
     document.getElementById('acc-custom-classification-prompt').value = acc?.custom_classification_prompt || '';
+    document.getElementById('acc-signature-html').value = acc?.signature_html || '';
     const currentFont = localStorage.getItem('ui_font_size') || '13';
     const fontSel = document.getElementById('acc-font-size');
     if (fontSel) fontSel.value = currentFont;
@@ -903,6 +908,7 @@ async function saveAccount() {
         protocol: inferredProtocol,
         owner_profile: document.getElementById('acc-owner-profile').value.trim(),
         custom_classification_prompt: document.getElementById('acc-custom-classification-prompt').value.trim(),
+        signature_html: document.getElementById('acc-signature-html').value,
     };
     if (!S.editingAccountId && tempPlatformPassword) {
         // Primera configuración: usar automáticamente la misma contraseña del registro/login.
