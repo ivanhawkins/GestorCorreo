@@ -89,16 +89,6 @@ class ClassifyController extends Controller
             ]
         );
 
-        $normalized = strtolower(trim((string)$label));
-        $message->folder = match ($normalized) {
-            'spam' => 'SPAM',
-            'interesantes' => 'Interesantes',
-            'servicios' => 'Servicios',
-            'encopia' => 'EnCopia',
-            default => 'INBOX',
-        };
-        $message->save();
-
         return response()->json(['updated' => 1, 'classification' => $classification]);
     }
 

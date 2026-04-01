@@ -169,7 +169,7 @@
             </div>
             <div class="form-group">
                 <label>Contraseña</label>
-                <input type="password" id="acc-password" class="form-control">
+                <input type="password" id="acc-password" class="form-control" placeholder="Se usa automáticamente la contraseña del registro" readonly disabled>
             </div>
 
             <hr class="form-divider">
@@ -181,7 +181,7 @@
                 </div>
                 <div class="form-group flex-1">
                     <label>Puerto</label>
-                    <input type="number" id="acc-imap-port" class="form-control" value="965">
+                    <input type="number" id="acc-imap-port" class="form-control" value="995">
                 </div>
                 <div class="form-group flex-1">
                     <label>Cifrado</label>
@@ -197,7 +197,7 @@
             <div class="form-row">
                 <div class="form-group flex-2">
                     <label>Servidor</label>
-                    <input type="text" id="acc-smtp-host" class="form-control" placeholder="smtp.dominio.com">
+                    <input type="text" id="acc-smtp-host" class="form-control" placeholder="smtp.ionos.es" value="smtp.ionos.es">
                 </div>
                 <div class="form-group flex-1">
                     <label>Puerto</label>
@@ -221,6 +221,15 @@
             <div class="form-group">
                 <label>Prompt de clasificación personalizado</label>
                 <textarea id="acc-custom-classification-prompt" class="form-control" rows="3" placeholder="Instrucciones extra para clasificar correos de esta cuenta."></textarea>
+            </div>
+            <div class="form-group">
+                <label>Tamaño de letra del panel</label>
+                <select id="acc-font-size" class="form-control">
+                    <option value="12">Pequeño</option>
+                    <option value="13" selected>Normal</option>
+                    <option value="14">Grande</option>
+                    <option value="16">Muy grande</option>
+                </select>
             </div>
         </div>
         <div class="modal-footer">

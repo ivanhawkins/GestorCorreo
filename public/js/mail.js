@@ -22,6 +22,7 @@ const S = {
     dateTo: '',
     readFilter: '',
     autoSyncTimer: null,
+    categories: [],
 };
 
 /* ── Auth guard ─────────────────────────────────────────────────── */
@@ -64,12 +65,39 @@ function doLogout() {
 
 /* ── Date format ────────────────────────────────────────────────── */
 function fmtDate(d) {
-    const date = new Date(d), now = new Date();
-    const diff = Math.floor((now - date) / 86400000);
-    if (diff === 0) return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-    if (diff === 1) return 'Ayer';
-    if (diff < 7) return date.toLocaleDateString('es-ES', { weekday: 'short' });
-    return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+    const date = new Date(d);
+    if (Number.isNaN(date.getTime())) return '';
+    const now = new Date();
+
+    const dayNames = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
+    const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+    const startOfWeek = (dt) => {
+        const x = new Date(dt);
+        const dow = x.getDay(); // 0 domingo
+        const mondayOffset = dow === 0 ? -6 : 1 - dow;
+        x.setHours(0, 0, 0, 0);
+        x.setDate(x.getDate() + mondayOffset);
+        return x;
+    };
+
+    const sameWeek = startOfWeek(date).getTime() === startOfWeek(now).getTime();
+    if (sameWeek) {
+        const hh = String(date.getHours()).padStart(2, '0');
+        const mm = String(date.getMinutes()).padStart(2, '0');
+        return `${dayNames[date.getDay()]} - ${hh}:${mm}`;
+    }
+
+    const sameMonth = date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+    if (sameMonth) {
+        return `${date.getDate()} ${monthNames[date.getMonth()]}`;
+    }
+
+    if (date.getFullYear() !== now.getFullYear()) {
+        return `${date.getDate()} ${date.getMonth() + 1} ${date.getFullYear()}`;
+    }
+
+    return `${date.getDate()} ${monthNames[date.getMonth()]}`;
 }
 
 /* ── Badge ──────────────────────────────────────────────────────── */
@@ -109,22 +137,41 @@ function renderAccounts() {
 
 /* ── Render: folders ────────────────────────────────────────────── */
 function renderFolders() {
+    const host = document.getElementById('folders-list');
+    const customNodes = host?.querySelectorAll('.folder-item[data-custom="1"]') || [];
+    customNodes.forEach((n) => n.remove());
+
+    const builtins = new Set(['Interesantes', 'Servicios', 'EnCopia', 'SPAM']);
+    const customCategories = (S.categories || []).filter(c => c?.key && !builtins.has(c.key));
+    const deletedNode = host?.querySelector('.folder-item[data-filter="deleted"]');
+
+    customCategories.forEach((cat) => {
+        const div = document.createElement('div');
+        div.className = 'folder-item';
+        div.dataset.filter = cat.key;
+        div.dataset.custom = '1';
+        div.innerHTML = `${escHtml(cat.name || cat.key)} <span class="total-count" id="count-${cat.key}"></span>`;
+        if (deletedNode && deletedNode.parentNode) deletedNode.parentNode.insertBefore(div, deletedNode);
+        else host?.appendChild(div);
+    });
+
     document.querySelectorAll('.folder-item').forEach(el => {
         el.classList.toggle('active', el.dataset.filter === S.filter);
     });
     const trashBtn = document.getElementById('btn-empty-trash');
     if (trashBtn) trashBtn.style.display = S.filter === 'deleted' ? '' : 'none';
+    bindFolderEvents();
 }
 
 async function loadUnreadCounts() {
     const r = await api('GET', '/messages/unread-counts');
     if (!r?.ok) return;
     const c = r.data || {};
-    const ids = ['all', 'Sent', 'starred', 'Interesantes', 'Servicios', 'EnCopia', 'SPAM', 'deleted'];
+    const ids = ['all', 'Sent', 'starred', 'Interesantes', 'Servicios', 'EnCopia', 'SPAM', 'deleted', ...(S.categories || []).map(x => x.key)];
     ids.forEach((k) => {
         const el = document.getElementById(`count-${k}`);
         if (!el) return;
-        const n = Number(c[k] || 0);
+        const n = Number(c[k] || c?.labels?.[k] || 0);
         el.textContent = n > 0 ? String(n) : '';
     });
 }
@@ -222,15 +269,24 @@ function isSentLikeMessage(message) {
 }
 
 function isForwardedMessage(message) {
+    if (!isSentLikeMessage(message)) return false;
     const subject = String(message?.subject || '').trim().toLowerCase();
     const snippet = String(message?.snippet || '').toLowerCase();
     return subject.startsWith('fwd:') || subject.startsWith('fw:') || snippet.includes('mensaje reenviado');
 }
 
 function isRepliedMessage(message) {
+    if (!isSentLikeMessage(message)) return false;
     const subject = String(message?.subject || '').trim().toLowerCase();
     const snippet = String(message?.snippet || '').toLowerCase();
     return subject.startsWith('re:') || snippet.includes('mensaje original');
+}
+
+function applyUiFontSize(size) {
+    const allowed = new Set(['12', '13', '14', '16']);
+    const normalized = allowed.has(String(size)) ? String(size) : '13';
+    document.documentElement.style.fontSize = `${normalized}px`;
+    localStorage.setItem('ui_font_size', normalized);
 }
 
 function buildPreviewHtml(message) {
@@ -321,7 +377,7 @@ async function loadMessages(reset = true) {
     if (S.filter === 'all') params.set('folder', 'INBOX');
     else if (S.filter === 'starred') params.set('starred', '1');
     else if (S.filter === 'deleted') params.set('deleted', '1');
-    else if (['Sent', 'Interesantes', 'Servicios', 'EnCopia', 'SPAM'].includes(S.filter)) params.set('folder', S.filter);
+    else if (['Sent'].includes(S.filter)) params.set('folder', S.filter);
     else if (S.filter !== 'all') params.set('label', S.filter);
     if (S.dateFrom) params.set('date_from', S.dateFrom);
     if (S.dateTo) params.set('date_to', S.dateTo);
@@ -353,6 +409,44 @@ async function loadAccounts() {
     } else if (S.accounts.length === 0) {
         openAccountModal();
     }
+}
+
+async function loadCategories() {
+    const r = await api('GET', '/categories');
+    if (!r?.ok) return;
+    S.categories = Array.isArray(r.data) ? r.data : [];
+    renderFolders();
+    loadUnreadCounts();
+}
+
+function bindFolderEvents() {
+    document.querySelectorAll('.folder-item').forEach(el => {
+        if (el.dataset.bound === '1') return;
+        el.dataset.bound = '1';
+
+        el.addEventListener('click', () => {
+            S.filter = el.dataset.filter;
+            renderAccounts();
+            renderFolders();
+            closeViewer();
+            loadMessages();
+        });
+
+        el.addEventListener('dragover', (ev) => {
+            ev.preventDefault();
+            el.classList.add('drop-target');
+        });
+        el.addEventListener('dragleave', () => {
+            el.classList.remove('drop-target');
+        });
+        el.addEventListener('drop', async (ev) => {
+            ev.preventDefault();
+            el.classList.remove('drop-target');
+            const messageId = ev.dataTransfer.getData('text/plain');
+            const targetFilter = el.dataset.filter;
+            await setMessageFolderByDrop(messageId, targetFilter);
+        });
+    });
 }
 
 /* ── Select account ─────────────────────────────────────────────── */
@@ -407,7 +501,7 @@ async function setMessageFolderByDrop(messageId, targetFilter) {
         return toggleStar({ stopPropagation() {} }, messageId, !!msg?.is_starred);
     }
 
-    const allowedLabels = ['Interesantes', 'Servicios', 'EnCopia', 'SPAM'];
+    const allowedLabels = Array.from(new Set(['Interesantes', 'Servicios', 'EnCopia', 'SPAM', ...(S.categories || []).map(c => c.key)]));
     if (!allowedLabels.includes(targetFilter)) return;
 
     const r = await api('PUT', `/messages/${messageId}/classify`, { classification_label: targetFilter });
@@ -723,15 +817,22 @@ function openAccountModal(acc = null) {
     document.getElementById('acc-email').value = platformEmail || acc?.email_address || '';
     document.getElementById('acc-email').readOnly = true;
     document.getElementById('acc-email').title = 'Se usa automáticamente el email del registro en la plataforma';
-    document.getElementById('acc-password').value = '';
+    const pwd = document.getElementById('acc-password');
+    pwd.value = '';
+    pwd.readOnly = true;
+    pwd.disabled = true;
+    pwd.placeholder = 'Se usa automáticamente la contraseña del registro';
     document.getElementById('acc-imap-host').value = acc?.imap_host || 'pop.ionos.es';
-    document.getElementById('acc-imap-port').value = acc?.imap_port || 965;
+    document.getElementById('acc-imap-port').value = acc?.imap_port || 995;
     document.getElementById('acc-imap-ssl').value = acc?.imap_ssl ? '1' : '0';
-    document.getElementById('acc-smtp-host').value = acc?.smtp_host || '';
+    document.getElementById('acc-smtp-host').value = acc?.smtp_host || 'smtp.ionos.es';
     document.getElementById('acc-smtp-port').value = acc?.smtp_port || 465;
     document.getElementById('acc-smtp-ssl').value = acc?.smtp_ssl ? '1' : '0';
     document.getElementById('acc-owner-profile').value = acc?.owner_profile || '';
     document.getElementById('acc-custom-classification-prompt').value = acc?.custom_classification_prompt || '';
+    const currentFont = localStorage.getItem('ui_font_size') || '13';
+    const fontSel = document.getElementById('acc-font-size');
+    if (fontSel) fontSel.value = currentFont;
     document.getElementById('modal-account').style.display = 'flex';
 }
 
@@ -739,7 +840,7 @@ async function saveAccount() {
     const emailStr = (S.user?.username || document.getElementById('acc-email').value || '').trim();
     const imapHost = document.getElementById('acc-imap-host').value.trim();
     const imapPort = parseInt(document.getElementById('acc-imap-port').value);
-    const rawPassword = document.getElementById('acc-password').value;
+    const rawPassword = '';
     const tempPlatformPassword = sessionStorage.getItem('platform_password_temp') || '';
     const inferredProtocol = (imapHost.toLowerCase().startsWith('pop.') || [110, 965, 995].includes(imapPort)) ? 'pop3' : 'imap';
     const body = {
@@ -755,9 +856,7 @@ async function saveAccount() {
         owner_profile: document.getElementById('acc-owner-profile').value.trim(),
         custom_classification_prompt: document.getElementById('acc-custom-classification-prompt').value.trim(),
     };
-    if (rawPassword && rawPassword.trim() !== '') {
-        body.password = rawPassword;
-    } else if (!S.editingAccountId && tempPlatformPassword) {
+    if (!S.editingAccountId && tempPlatformPassword) {
         // Primera configuración: usar automáticamente la misma contraseña del registro/login.
         body.password = tempPlatformPassword;
     } else if (!S.editingAccountId) {
@@ -776,6 +875,8 @@ async function saveAccount() {
     btn.disabled = false; btn.textContent = 'Guardar';
 
     if (r?.ok) {
+        const fontSel = document.getElementById('acc-font-size');
+        if (fontSel) applyUiFontSize(fontSel.value);
         toast(S.editingAccountId ? 'Cuenta actualizada' : 'Cuenta añadida', 'success');
         document.getElementById('modal-account').style.display = 'none';
         if (!S.editingAccountId) {
@@ -807,6 +908,7 @@ async function markAllRead() {
 
 /* ── Event listeners ────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', async () => {
+    applyUiFontSize(localStorage.getItem('ui_font_size') || '13');
     renderUser();
 
     // Auth check
@@ -814,6 +916,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!me || !me.ok) { doLogout(); return; }
 
     await loadAccounts();
+    await loadCategories();
     await loadMessages();
     await loadUnreadCounts();
     await refreshAiHealth();
@@ -847,30 +950,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // Folder filters
-    document.querySelectorAll('.folder-item').forEach(el => {
-        el.addEventListener('click', () => {
-            S.filter = el.dataset.filter;
-            renderAccounts();
-            renderFolders();
-            closeViewer();
-            loadMessages();
-        });
-
-        el.addEventListener('dragover', (ev) => {
-            ev.preventDefault();
-            el.classList.add('drop-target');
-        });
-        el.addEventListener('dragleave', () => {
-            el.classList.remove('drop-target');
-        });
-        el.addEventListener('drop', async (ev) => {
-            ev.preventDefault();
-            el.classList.remove('drop-target');
-            const messageId = ev.dataTransfer.getData('text/plain');
-            const targetFilter = el.dataset.filter;
-            await setMessageFolderByDrop(messageId, targetFilter);
-        });
-    });
+    bindFolderEvents();
 
     // Search (debounced)
     let searchTimer;

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Account;
 use App\Models\Message;
 use App\Models\Attachment;
+use App\Models\Classification;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
@@ -18,24 +19,37 @@ class MessageController extends Controller
             ->where('is_deleted', false)
             ->pluck('id');
 
-        $query = Message::whereIn('account_id', $accountIds)->where('is_read', false);
-
-        $countsByFolder = $query->selectRaw('folder, COUNT(*) as total')
+        $countsByFolder = Message::whereIn('account_id', $accountIds)
+            ->where('is_read', false)
+            ->selectRaw('folder, COUNT(*) as total')
             ->groupBy('folder')
             ->pluck('total', 'folder');
 
+        $labelCounts = Classification::query()
+            ->join('messages', 'messages.id', '=', 'classifications.message_id')
+            ->whereIn('messages.account_id', $accountIds)
+            ->where('messages.is_read', false)
+            ->whereNotNull('classifications.final_label')
+            ->selectRaw('classifications.final_label as label, COUNT(*) as total')
+            ->groupBy('classifications.final_label')
+            ->pluck('total', 'label');
+
         return response()->json([
-            'all' => (int)$query->count(),
+            'all' => (int)(Message::whereIn('account_id', $accountIds)
+                ->where('is_read', false)
+                ->where('folder', 'INBOX')
+                ->count()),
             'starred' => (int)Message::whereIn('account_id', $accountIds)
                 ->where('is_read', false)
                 ->where('is_starred', true)
                 ->count(),
-            'Interesantes' => (int)($countsByFolder['Interesantes'] ?? 0),
-            'Servicios' => (int)($countsByFolder['Servicios'] ?? 0),
-            'EnCopia' => (int)($countsByFolder['EnCopia'] ?? 0),
+            'Interesantes' => (int)($labelCounts['Interesantes'] ?? 0),
+            'Servicios' => (int)($labelCounts['Servicios'] ?? 0),
+            'EnCopia' => (int)($labelCounts['EnCopia'] ?? 0),
             'Sent' => (int)($countsByFolder['Sent'] ?? 0),
-            'SPAM' => (int)($countsByFolder['SPAM'] ?? 0),
+            'SPAM' => (int)($labelCounts['SPAM'] ?? 0),
             'deleted' => (int)($countsByFolder['deleted'] ?? 0),
+            'labels' => $labelCounts,
         ]);
     }
 
