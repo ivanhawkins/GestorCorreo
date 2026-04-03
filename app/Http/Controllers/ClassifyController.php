@@ -81,7 +81,12 @@ class ClassifyController extends Controller
         $label = $request->input('classification_label');
         $classification = Classification::updateOrCreate(
             ['message_id' => $messageId],
-            ['final_label' => $label, 'decided_by' => 'manual', 'final_reason' => 'Etiquetado manualmente']
+            [
+                'final_label' => $label,
+                'decided_by' => 'manual',
+                'final_reason' => 'Etiquetado manualmente',
+                'decided_at' => now(),
+            ]
         );
 
         return response()->json(['updated' => 1, 'classification' => $classification]);

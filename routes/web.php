@@ -6,17 +6,18 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 | Web Routes
 |--------------------------------------------------------------------------
-| Catch-all route: serves the Vue SPA index.html for all non-API requests.
-| The API routes are defined in routes/api.php.
 */
 
 Route::withoutMiddleware([
+    \Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class,
     \Illuminate\Session\Middleware\StartSession::class,
     \Illuminate\View\Middleware\ShareErrorsFromSession::class,
-])->get('/{any?}', function () {
-    $indexPath = public_path('index.html');
-    if (file_exists($indexPath)) {
-        return response()->file($indexPath);
-    }
-    return response('GestorCorreo API - OK', 200);
-})->where('any', '.*');
+])->group(function () {
+
+    Route::get('/login', fn() => view('login'))->name('login');
+    Route::get('/admin', fn() => view('admin'))->name('admin');
+
+    // Todo lo demás → dashboard (el JS comprueba el token)
+    Route::get('/{any?}', fn() => view('dashboard'))->where('any', '.*');
+
+});

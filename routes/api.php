@@ -54,6 +54,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Messages
     Route::get('/messages',                       [App\Http\Controllers\MessageController::class, 'index']);
+    Route::get('/messages/unread-counts',         [App\Http\Controllers\MessageController::class, 'unreadCounts']);
     Route::get('/messages/{id}',                  [App\Http\Controllers\MessageController::class, 'show']);
     Route::put('/messages/{id}/read',             [App\Http\Controllers\MessageController::class, 'markRead']);
     Route::put('/messages/{id}/flags',            [App\Http\Controllers\MessageController::class, 'updateFlags']); // alias FastAPI

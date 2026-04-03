@@ -9,10 +9,40 @@ use App\Services\ImapService;
 use App\Services\Pop3Service;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Hash;
 
 class AccountController extends Controller
 {
     public function __construct(private EncryptionService $encryption) {}
+
+    private function getPlatformEmailOrError($user): array
+    {
+        $platformEmail = (string)($user->username ?? '');
+        if (!filter_var($platformEmail, FILTER_VALIDATE_EMAIL)) {
+            return [null, response()->json(['error' => 'Tu usuario de plataforma debe ser un email válido para configurar la cuenta de correo.'], 422)];
+        }
+        return [$platformEmail, null];
+    }
+
+    private function inferProtocol(array $data): string
+    {
+        $host = strtolower((string)($data['imap_host'] ?? ''));
+        $port = (int)($data['imap_port'] ?? 0);
+
+        if (str_starts_with($host, 'pop.') || str_contains($host, 'pop3') || in_array($port, [110, 965, 995], true)) {
+            return 'pop3';
+        }
+
+        if (str_starts_with($host, 'imap.') || str_contains($host, 'imap') || in_array($port, [143, 993], true)) {
+            return 'imap';
+        }
+
+        if (!empty($data['protocol']) && in_array(strtolower((string)$data['protocol']), ['imap', 'pop3'], true)) {
+            return strtolower((string)$data['protocol']);
+        }
+
+        return 'imap';
+    }
 
     /**
      * GET /accounts
@@ -92,6 +122,7 @@ class AccountController extends Controller
             'auto_sync_interval'            => 'sometimes|integer|min:0',
             'custom_classification_prompt'  => 'sometimes|nullable|string',
             'owner_profile'                 => 'sometimes|nullable|string|max:1000',
+            'signature_html'                => 'sometimes|nullable|string|max:20000',
             'mailbox_storage_limit'         => 'sometimes|integer|min:0',
         ]);
 
@@ -106,7 +137,7 @@ class AccountController extends Controller
             'smtp_port'                     => $validated['smtp_port'],
             'username'                      => $validated['username'],
             'encrypted_password'            => $encryptedPassword,
-            'protocol'                      => $validated['protocol']           ?? 'imap',
+            'protocol'                      => $this->inferProtocol($validated),
             'is_active'                     => $validated['is_active']          ?? true,
             'ssl_verify'                    => $validated['ssl_verify']         ?? true,
             'connection_timeout'            => $validated['connection_timeout']  ?? 30,
@@ -114,6 +145,7 @@ class AccountController extends Controller
             'auto_sync_interval'            => $validated['auto_sync_interval'] ?? 0,
             'custom_classification_prompt'  => $validated['custom_classification_prompt'] ?? null,
             'owner_profile'                 => $validated['owner_profile']      ?? null,
+            'signature_html'                => $validated['signature_html']     ?? null,
             'mailbox_storage_limit'         => $validated['mailbox_storage_limit'] ?? 0,
             'is_deleted'                    => false,
         ]);
@@ -153,14 +185,16 @@ class AccountController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
+        [$platformEmail, $platformEmailError] = $this->getPlatformEmailOrError($user);
+        if ($platformEmailError) return $platformEmailError;
 
         $validated = $request->validate([
-            'email_address'                 => 'required|email|max:255',
+            'email_address'                 => 'sometimes|email|max:255',
             'imap_host'                     => 'required|string|max:255',
             'imap_port'                     => 'required|integer|min:1|max:65535',
             'smtp_host'                     => 'required|string|max:255',
             'smtp_port'                     => 'required|integer|min:1|max:65535',
-            'username'                      => 'required|string|max:255',
+            'username'                      => 'sometimes|string|max:255',
             'password'                      => 'required|string',
             'protocol'                      => 'sometimes|in:imap,pop3',
             'is_active'                     => 'sometimes|boolean',
@@ -170,21 +204,26 @@ class AccountController extends Controller
             'auto_sync_interval'            => 'sometimes|integer|min:0',
             'custom_classification_prompt'  => 'sometimes|nullable|string',
             'owner_profile'                 => 'sometimes|nullable|string|max:1000',
+            'signature_html'                => 'sometimes|nullable|string|max:20000',
             'mailbox_storage_limit'         => 'sometimes|integer|min:0',
         ]);
+
+        if (!Hash::check($validated['password'], $user->password_hash)) {
+            return response()->json(['error' => 'La contraseña debe ser exactamente la misma que usas para entrar en la plataforma.'], 422);
+        }
 
         $encryptedPassword = $this->encryption->encrypt($validated['password']);
 
         $account = Account::create([
             'user_id'                       => $user->id,
-            'email_address'                 => $validated['email_address'],
+            'email_address'                 => $platformEmail,
             'imap_host'                     => $validated['imap_host'],
             'imap_port'                     => $validated['imap_port'],
             'smtp_host'                     => $validated['smtp_host'],
             'smtp_port'                     => $validated['smtp_port'],
-            'username'                      => $validated['username'],
+            'username'                      => $platformEmail,
             'encrypted_password'            => $encryptedPassword,
-            'protocol'                      => $validated['protocol']           ?? 'imap',
+            'protocol'                      => $this->inferProtocol($validated),
             'is_active'                     => $validated['is_active']          ?? true,
             'ssl_verify'                    => $validated['ssl_verify']         ?? true,
             'connection_timeout'            => $validated['connection_timeout']  ?? 30,
@@ -192,6 +231,7 @@ class AccountController extends Controller
             'auto_sync_interval'            => $validated['auto_sync_interval'] ?? 0,
             'custom_classification_prompt'  => $validated['custom_classification_prompt'] ?? null,
             'owner_profile'                 => $validated['owner_profile']      ?? null,
+            'signature_html'                => $validated['signature_html']     ?? null,
             'mailbox_storage_limit'         => $validated['mailbox_storage_limit'] ?? 0,
             'is_deleted'                    => false,
         ]);
@@ -225,6 +265,8 @@ class AccountController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         $user    = $request->user();
+        [$platformEmail, $platformEmailError] = $this->getPlatformEmailOrError($user);
+        if ($platformEmailError) return $platformEmailError;
         $account = Account::where('id', $id)
             ->where('user_id', $user->id)
             ->where('is_deleted', false)
@@ -241,7 +283,7 @@ class AccountController extends Controller
             'smtp_host'                     => 'sometimes|string|max:255',
             'smtp_port'                     => 'sometimes|integer|min:1|max:65535',
             'username'                      => 'sometimes|string|max:255',
-            'password'                      => 'sometimes|string',
+            'password'                      => 'sometimes|nullable|string',
             'protocol'                      => 'sometimes|in:imap,pop3',
             'is_active'                     => 'sometimes|boolean',
             'ssl_verify'                    => 'sometimes|boolean',
@@ -250,13 +292,31 @@ class AccountController extends Controller
             'auto_sync_interval'            => 'sometimes|integer|min:0',
             'custom_classification_prompt'  => 'sometimes|nullable|string',
             'owner_profile'                 => 'sometimes|nullable|string|max:1000',
+            'signature_html'                => 'sometimes|nullable|string|max:20000',
             'mailbox_storage_limit'         => 'sometimes|integer|min:0',
         ]);
 
         // Si viene nueva password, encriptarla
-        if (isset($validated['password'])) {
+        if (isset($validated['password']) && trim((string)$validated['password']) !== '') {
+            if (!Hash::check((string)$validated['password'], $user->password_hash)) {
+                return response()->json(['error' => 'La contraseña debe ser exactamente la misma que usas para entrar en la plataforma.'], 422);
+            }
             $validated['encrypted_password'] = $this->encryption->encrypt($validated['password']);
-            unset($validated['password']);
+        }
+        unset($validated['password']);
+        $validated['email_address'] = $platformEmail;
+        $validated['username'] = $platformEmail;
+
+        if (
+            array_key_exists('protocol', $validated) ||
+            array_key_exists('imap_host', $validated) ||
+            array_key_exists('imap_port', $validated)
+        ) {
+            $validated['protocol'] = $this->inferProtocol($validated + [
+                'imap_host' => $account->imap_host,
+                'imap_port' => $account->imap_port,
+                'protocol'  => $account->protocol,
+            ]);
         }
 
         $account->fill($validated);
@@ -333,7 +393,11 @@ class AccountController extends Controller
             return response()->json(['error' => 'No se pudo desencriptar la contraseña: ' . $e->getMessage()], 500);
         }
 
-        $protocol = strtolower($account->protocol ?? 'imap');
+        $protocol = $this->inferProtocol([
+            'protocol'  => $account->protocol,
+            'imap_host' => $account->imap_host,
+            'imap_port' => $account->imap_port,
+        ]);
 
         try {
             if ($protocol === 'pop3') {

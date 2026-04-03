@@ -109,6 +109,13 @@ class ClassificationService
                 $classificationData
             );
 
+            // Mantener siempre el correo recibido en INBOX.
+            // La clasificación se usa como "carpeta lógica" (label) sin mover físicamente el mensaje.
+            if (strtoupper((string) $message->folder) !== 'INBOX') {
+                $message->folder = 'INBOX';
+                $message->save();
+            }
+
             return $classification;
         } catch (\Throwable $e) {
             Log::error('ClassificationService: Error al clasificar mensaje', [

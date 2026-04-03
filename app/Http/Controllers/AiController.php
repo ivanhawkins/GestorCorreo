@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AiConfig;
 use App\Services\AiService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -28,45 +29,62 @@ class AiController extends Controller
     public function testConnection(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'api_url' => 'required|string|url|max:500',
-            'api_key' => 'required|string|max:500',
+            'api_url'       => 'sometimes|required|string|url|max:500',
+            'api_key'       => 'sometimes|required|string|max:500',
+            'primary_model' => 'sometimes|nullable|string|max:255',
         ]);
 
         try {
-            // Endpoint de modelos: {api_url}/models
-            $modelsEndpoint = rtrim($validated['api_url'], '/') . '/models';
+            $config = AiConfig::first();
+            $apiUrl = $validated['api_url'] ?? $config?->api_url;
+            $apiKey = $validated['api_key'] ?? $config?->api_key;
+            $model  = $validated['primary_model'] ?? $config?->primary_model ?? 'qwen3';
 
-            $response = \Illuminate\Support\Facades\Http::withHeaders([
-                    'x-api-key' => $validated['api_key'],
-                ])
-                ->timeout(10)
-                ->get($modelsEndpoint);
+            if (!$apiUrl || !$apiKey) {
+                return response()->json(['success' => false, 'error' => 'Falta api_url o api_key para probar conexión.'], 200);
+            }
+
+            $endpoint = $this->resolveChatEndpoint($apiUrl);
+            $response = \Illuminate\Support\Facades\Http::withHeaders(['x-api-key' => $apiKey])
+                ->timeout(12)
+                ->post($endpoint, [
+                    'prompt' => 'ping',
+                    'modelo' => $model,
+                    'model'  => $model,
+                ]);
 
             if ($response->failed()) {
                 return response()->json([
                     'success' => false,
-                    'error'   => 'HTTP ' . $response->status() . ' desde ' . $modelsEndpoint . ': ' . mb_substr($response->body(), 0, 300),
+                    'error'   => 'HTTP ' . $response->status() . ' desde ' . $endpoint . ': ' . mb_substr($response->body(), 0, 300),
                 ], 200);
             }
 
-            $data = $response->json();
-
-            // Extraer lista de modelos según el formato de la respuesta
-            $models = [];
-            if (is_array($data)) {
-                if (isset($data['models']) && is_array($data['models'])) {
-                    $models = array_values(array_filter(array_map(fn($m) => is_string($m) ? $m : ($m['id'] ?? $m['name'] ?? null), $data['models'])));
-                } elseif (isset($data['data']) && is_array($data['data'])) {
-                    $models = collect($data['data'])->pluck('id')->filter()->values()->toArray();
-                } elseif (array_is_list($data)) {
-                    $models = array_values(array_filter(array_map(fn($m) => is_string($m) ? $m : ($m['id'] ?? $m['name'] ?? null), $data)));
-                }
-            }
-
-            return response()->json(['success' => true, 'models' => $models]);
+            return response()->json([
+                'success'  => true,
+                'endpoint' => $endpoint,
+                'model'    => $model,
+            ]);
         } catch (\Throwable $e) {
             return response()->json(['success' => false, 'error' => $e->getMessage()], 200);
         }
+    }
+
+    private function resolveChatEndpoint(string $apiUrl): string
+    {
+        $url = rtrim($apiUrl, '/');
+
+        if (str_ends_with($url, '/chat/chat')) {
+            return $url;
+        }
+        if (str_ends_with($url, '/chat/text/chat')) {
+            return substr($url, 0, -strlen('/text/chat')) . '/chat';
+        }
+        if (str_ends_with($url, '/chat')) {
+            return $url;
+        }
+
+        return $url . '/chat/chat';
     }
 
     /**

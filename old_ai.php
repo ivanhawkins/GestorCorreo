@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Services;
 
@@ -7,7 +7,7 @@ use App\Models\AiConfig;
 use Illuminate\Support\Facades\Log;
 
 /**
- * AiService — compatible con la API personalizada en https://192.168.1.45/chat
+ * AiService ÔÇö compatible con la API personalizada en https://192.168.1.45/chat
  *
  * Formato de la API:
  *   POST {api_url}/chat   body: {"prompt":"...","model":"..."}
@@ -27,7 +27,7 @@ class AiService
     }
 
     // -------------------------------------------------------------------------
-    // Método principal: Clasifica un mensaje
+    // M├®todo principal: Clasifica un mensaje
     // -------------------------------------------------------------------------
 
     /**
@@ -36,7 +36,7 @@ class AiService
     public function classifyMessage(array $messageData, array $categories, ?string $customPrompt = null): array
     {
         if (!$this->config) {
-            Log::warning('AiService: No hay configuración IA disponible.');
+            Log::warning('AiService: No hay configuraci├│n IA disponible.');
             return $this->fallbackResult();
         }
 
@@ -76,14 +76,14 @@ class AiService
 
         if ($gptLabel && !$qwenLabel) {
             $result['final_label']  = $gptLabel;
-            $result['final_reason'] = 'Solo el modelo primario respondió.';
+            $result['final_reason'] = 'Solo el modelo primario respondi├│.';
             $result['decided_by']   = 'primary';
             return $result;
         }
 
         if (!$gptLabel && $qwenLabel) {
             $result['final_label']  = $qwenLabel;
-            $result['final_reason'] = 'Solo el modelo secundario respondió.';
+            $result['final_reason'] = 'Solo el modelo secundario respondi├│.';
             $result['decided_by']   = 'secondary';
             return $result;
         }
@@ -98,7 +98,7 @@ class AiService
 
         // Desacuerdo: usar primario
         $result['final_label']  = $gptLabel;
-        $result['final_reason'] = "Desacuerdo entre modelos ({$gptLabel} vs {$qwenLabel}). Se usó el primario.";
+        $result['final_reason'] = "Desacuerdo entre modelos ({$gptLabel} vs {$qwenLabel}). Se us├│ el primario.";
         $result['decided_by']   = 'primary';
         return $result;
     }
@@ -116,24 +116,22 @@ class AiService
         string $ownerProfile
     ): string {
         if (!$this->config) {
-            throw new \RuntimeException('No hay configuración IA disponible.');
+            throw new \RuntimeException('No hay configuraci├│n IA disponible.');
         }
 
         $prompt = <<<PROMPT
-Eres un asistente de redacción de emails profesional.
+Eres un asistente de redacci├│n de emails profesional.
 Perfil del remitente: {$ownerProfile}
 
-Redacta una respuesta al siguiente email siguiendo la instrucción del usuario.
+Redacta una respuesta al siguiente email siguiendo la instrucci├│n del usuario.
 Devuelve SOLO el texto del email de respuesta, sin asunto, sin encabezados, sin explicaciones.
-NO uses placeholders ni campos entre corchetes o llaves (ejemplos prohibidos: [Tu nombre], [Nombre], {firma}, {empresa}).
-El texto debe quedar final y utilizable tal cual, sin pedir datos adicionales.
 
 Email original:
 - De: {$originalFromName} <{$originalFromEmail}>
 - Asunto: {$originalSubject}
 - Contenido: {$originalBody}
 
-Instrucción: {$userInstruction}
+Instrucci├│n: {$userInstruction}
 
 Respuesta:
 PROMPT;
@@ -141,7 +139,7 @@ PROMPT;
         $content = $this->callModelRaw($this->config->primary_model, $prompt);
 
         if ($content === null) {
-            throw new \RuntimeException('La IA no devolvió contenido.');
+            throw new \RuntimeException('La IA no devolvi├│ contenido.');
         }
 
         return trim($content);
@@ -154,7 +152,7 @@ PROMPT;
     public function checkStatus(): array
     {
         if (!$this->config || !$this->config->api_url || !$this->config->api_key) {
-            return ['available' => false, 'reason' => 'Sin configuración IA'];
+            return ['available' => false, 'reason' => 'Sin configuraci├│n IA'];
         }
 
         try {
@@ -164,7 +162,7 @@ PROMPT;
                 return ['available' => true, 'model' => $this->config->primary_model];
             }
 
-            return ['available' => false, 'reason' => 'La IA no respondió'];
+            return ['available' => false, 'reason' => 'La IA no respondi├│'];
         } catch (\Throwable $e) {
             return ['available' => false, 'reason' => $e->getMessage()];
         }
@@ -175,7 +173,7 @@ PROMPT;
     // -------------------------------------------------------------------------
 
     /**
-     * Llama al modelo y devuelve la clasificación parseada.
+     * Llama al modelo y devuelve la clasificaci├│n parseada.
      */
     private function callModel(string $modelName, string $prompt): array
     {
@@ -201,14 +199,12 @@ PROMPT;
     {
         if (!$this->config) return null;
 
-        $endpoint = $this->resolveChatEndpoint((string)$this->config->api_url);
+        $endpoint = rtrim($this->config->api_url, '/') . '/chat';
 
         $response = Http::withHeaders(['x-api-key' => $this->config->api_key])
             ->timeout($timeout)
             ->post($endpoint, [
                 'prompt' => $prompt,
-                // Compatibilidad con APIs que esperan "modelo" o "model"
-                'modelo' => $modelName,
                 'model'  => $modelName,
             ]);
 
@@ -223,28 +219,8 @@ PROMPT;
         return $this->extractTextFromResponse($response);
     }
 
-    private function resolveChatEndpoint(string $apiUrl): string
-    {
-        $url = rtrim($apiUrl, '/');
-
-        if (str_ends_with($url, '/chat/chat')) {
-            return $url;
-        }
-
-        // Normalizar configuraciones antiguas erróneas como /chat/text/chat
-        if (str_ends_with($url, '/chat/text/chat')) {
-            return substr($url, 0, -strlen('/text/chat')) . '/chat';
-        }
-
-        if (str_ends_with($url, '/chat')) {
-            return $url;
-        }
-
-        return $url . '/chat/chat';
-    }
-
     /**
-     * Extrae el texto de la respuesta, manejando múltiples formatos posibles.
+     * Extrae el texto de la respuesta, manejando m├║ltiples formatos posibles.
      * Soporta la API personalizada hawkins.es: {"respuesta":"...","success":true}
      */
     private function extractTextFromResponse($response): ?string
@@ -293,7 +269,7 @@ PROMPT;
     }
 
     // -------------------------------------------------------------------------
-    // Construcción de prompts
+    // Construcci├│n de prompts
     // -------------------------------------------------------------------------
 
     private function buildClassificationPrompt(array $messageData, array $categories, ?string $customPrompt): string
@@ -325,9 +301,9 @@ PROMPT;
         $customSection = $customPrompt ? "\n## Instrucciones adicionales:\n{$customPrompt}\n" : '';
 
         return <<<PROMPT
-Eres un clasificador de correos electrónicos. Analiza el mensaje y clasifícalo en UNA de las categorías disponibles.
+Eres un clasificador de correos electr├│nicos. Analiza el mensaje y clasif├¡calo en UNA de las categor├¡as disponibles.
 
-## Categorías disponibles:
+## Categor├¡as disponibles:
 {$categoriesText}
 {$customSection}
 ## Datos del mensaje:
@@ -341,12 +317,12 @@ Eres un clasificador de correos electrónicos. Analiza el mensaje y clasifícalo
 {$bodyText}
 
 ## Instrucciones:
-1. Usa el campo "label" con el valor exacto del "key" de la categoría elegida.
+1. Usa el campo "label" con el valor exacto del "key" de la categor├¡a elegida.
 2. Asigna una confianza entre 0.0 y 1.0.
-3. Proporciona una breve justificación en español.
+3. Proporciona una breve justificaci├│n en espa├▒ol.
 
 ## Respuesta (SOLO JSON, sin texto adicional):
-{"label": "key_de_la_categoria", "confidence": 0.95, "rationale": "Justificación breve en español"}
+{"label": "key_de_la_categoria", "confidence": 0.95, "rationale": "Justificaci├│n breve en espa├▒ol"}
 PROMPT;
     }
 
@@ -372,7 +348,7 @@ PROMPT;
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             Log::warning('AiService: No se pudo parsear JSON', ['content' => mb_substr($content, 0, 300)]);
-            return ['error' => 'JSON inválido'];
+            return ['error' => 'JSON inv├ílido'];
         }
 
         $label = $data['label'] ?? null;

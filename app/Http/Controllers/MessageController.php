@@ -5,12 +5,54 @@ namespace App\Http\Controllers;
 use App\Models\Account;
 use App\Models\Message;
 use App\Models\Attachment;
+use App\Models\Classification;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
 
 class MessageController extends Controller
 {
+    public function unreadCounts(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $accountIds = Account::where('user_id', $user->id)
+            ->where('is_deleted', false)
+            ->pluck('id');
+
+        $countsByFolder = Message::whereIn('account_id', $accountIds)
+            ->where('is_read', false)
+            ->selectRaw('folder, COUNT(*) as total')
+            ->groupBy('folder')
+            ->pluck('total', 'folder');
+
+        $labelCounts = Classification::query()
+            ->join('messages', 'messages.id', '=', 'classifications.message_id')
+            ->whereIn('messages.account_id', $accountIds)
+            ->where('messages.is_read', false)
+            ->whereNotNull('classifications.final_label')
+            ->selectRaw('classifications.final_label as label, COUNT(*) as total')
+            ->groupBy('classifications.final_label')
+            ->pluck('total', 'label');
+
+        return response()->json([
+            'all' => (int)(Message::whereIn('account_id', $accountIds)
+                ->where('is_read', false)
+                ->where('folder', 'INBOX')
+                ->count()),
+            'starred' => (int)Message::whereIn('account_id', $accountIds)
+                ->where('is_read', false)
+                ->where('is_starred', true)
+                ->count(),
+            'Interesantes' => (int)($labelCounts['Interesantes'] ?? 0),
+            'Servicios' => (int)($labelCounts['Servicios'] ?? 0),
+            'EnCopia' => (int)($labelCounts['EnCopia'] ?? 0),
+            'Sent' => (int)($countsByFolder['Sent'] ?? 0),
+            'SPAM' => (int)($labelCounts['SPAM'] ?? 0),
+            'deleted' => (int)($countsByFolder['deleted'] ?? 0),
+            'labels' => $labelCounts,
+        ]);
+    }
+
     /**
      * GET /messages
      * Lista mensajes con filtros: account_id, folder, category, search, page.
@@ -23,8 +65,14 @@ class MessageController extends Controller
             'account_id' => 'sometimes|integer',
             'folder'     => 'sometimes|string',
             'category'   => 'sometimes|string',
+            'label'      => 'sometimes|string',
             'search'     => 'sometimes|string|max:255',
             'page'       => 'sometimes|integer|min:1',
+            'starred'    => 'sometimes|boolean',
+            'deleted'    => 'sometimes|boolean',
+            'is_read'    => 'sometimes|boolean',
+            'date_from'  => 'sometimes|date',
+            'date_to'    => 'sometimes|date',
         ]);
 
         // Obtener IDs de cuentas del usuario
@@ -48,11 +96,31 @@ class MessageController extends Controller
             $query->where('folder', $validated['folder']);
         }
 
-        // Filtro por categoría (join con classifications)
-        if (!empty($validated['category'])) {
+        $category = $validated['category'] ?? $validated['label'] ?? null;
+        if (!empty($category)) {
             $query->whereHas('classification', function ($q) use ($validated) {
-                $q->where('final_label', $validated['category']);
+                $q->where('final_label', $validated['category'] ?? $validated['label']);
             });
+        }
+
+        if (array_key_exists('starred', $validated)) {
+            $query->where('is_starred', (bool)$validated['starred']);
+        }
+
+        if (array_key_exists('is_read', $validated)) {
+            $query->where('is_read', (bool)$validated['is_read']);
+        }
+
+        if (array_key_exists('deleted', $validated)) {
+            $query->where('folder', (bool)$validated['deleted'] ? 'deleted' : 'INBOX');
+        }
+
+        if (!empty($validated['date_from'])) {
+            $query->where('date', '>=', $validated['date_from']);
+        }
+
+        if (!empty($validated['date_to'])) {
+            $query->where('date', '<=', $validated['date_to'] . ' 23:59:59');
         }
 
         // Búsqueda por asunto o remitente
@@ -67,7 +135,7 @@ class MessageController extends Controller
 
         $query->orderBy('date', 'desc');
 
-        $perPage  = 15;
+        $perPage  = 50;
         $page     = $validated['page'] ?? 1;
         $paginated = $query->paginate($perPage, ['*'], 'page', $page);
 

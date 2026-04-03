@@ -6,13 +6,9 @@ use Illuminate\Support\Facades\Log;
 
 class Pop3Service
 {
-    /** @var resource|false|null */
-    private $connection = null;
-
+    private $socket = null;
     private $account;
     private string $password;
-
-    /** @var array Últimos errores/alertas de imap tras un connect() fallido */
     private array $lastErrors = [];
 
     public function __construct($account, string $password)
@@ -21,599 +17,434 @@ class Pop3Service
         $this->password = $password;
     }
 
-    // -------------------------------------------------------------------------
-    // Conexión
-    // -------------------------------------------------------------------------
-
-    /**
-     * Conectar al servidor POP3 usando la extensión imap de PHP.
-     * Usa /pop3/ssl o /pop3 según la configuración de la cuenta.
-     */
     public function connect(): bool
     {
+        $host = (string)$this->account->imap_host;
+        $port = (int)$this->account->imap_port;
+        $timeout = 30;
+        $isSsl = in_array($port, [965, 995], true);
+        $transport = $isSsl ? 'tls' : 'tcp';
+        $target = sprintf('%s://%s:%d', $transport, $host, $port);
+
         try {
-            $host    = $this->account->imap_host;
-            $port    = (int) $this->account->imap_port;
-            $useSSL  = ($port === 995 || stripos((string)($this->account->imap_host ?? ''), 'ssl') !== false);
-            $verify  = (bool) ($this->account->ssl_verify ?? true);
-            $timeout = (int) ($this->account->connection_timeout ?? 30);
-
-            // Construir el mailbox string de POP3
-            if ($useSSL) {
-                $flags = '/pop3/ssl';
-                if (!$verify) {
-                    $flags .= '/novalidate-cert';
-                }
-            } else {
-                $flags = '/pop3/notls';
-                if (!$verify) {
-                    $flags .= '/novalidate-cert';
-                }
-            }
-
-            $mailbox = '{' . $host . ':' . $port . $flags . '}INBOX';
-
-            // Configurar timeout
-            imap_timeout(IMAP_OPENTIMEOUT, $timeout);
-            imap_timeout(IMAP_READTIMEOUT, $timeout);
-            imap_timeout(IMAP_WRITETIMEOUT, $timeout);
-            imap_timeout(IMAP_CLOSETIMEOUT, $timeout);
-
-            $this->connection = @imap_open(
-                $mailbox,
-                $this->account->username,
-                $this->password,
-                0,
-                1
-            );
-
-            if ($this->connection === false) {
-                $errors = imap_errors() ?: [];
-                $alerts = imap_alerts() ?: [];
-                $this->lastErrors = array_merge($errors, $alerts);
-                Log::error('Pop3Service: Error de conexión', [
-                    'account' => $this->account->email_address,
-                    'mailbox' => $mailbox,
-                    'errors'  => $errors,
-                    'alerts'  => $alerts,
-                ]);
-                return false;
-            }
-
-            Log::info('Pop3Service: Conexión establecida', [
-                'account' => $this->account->email_address,
-                'host'    => $host,
-                'port'    => $port,
+            $ctx = stream_context_create([
+                'ssl' => [
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                    'allow_self_signed' => true,
+                ],
             ]);
 
+            $errno = 0;
+            $errstr = '';
+            $this->socket = @stream_socket_client($target, $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $ctx);
+            if (!is_resource($this->socket)) {
+                throw new \RuntimeException("No se pudo abrir socket POP3: ({$errno}) {$errstr}");
+            }
+
+            stream_set_timeout($this->socket, $timeout);
+
+            $greeting = $this->readLine();
+            if (!$this->isOk($greeting)) {
+                throw new \RuntimeException('Saludo POP3 inválido: ' . $greeting);
+            }
+
+            $this->assertOk($this->sendCommand('USER ' . $this->account->username), 'USER');
+            $this->assertOk($this->sendCommand('PASS ' . $this->password), 'PASS');
+
+            Log::info('Pop3Service (socket): Conexión establecida', ['account' => $this->account->email_address]);
             return true;
         } catch (\Throwable $e) {
             $this->lastErrors = [$e->getMessage()];
-            Log::error('Pop3Service: Excepción en connect()', [
-                'account' => $this->account->email_address ?? 'unknown',
-                'error'   => $e->getMessage(),
-                'trace'   => $e->getTraceAsString(),
+            Log::error('Pop3Service (socket): Fallo de conexión', [
+                'account' => $this->account->email_address,
+                'error'   => $e->getMessage()
             ]);
+            $this->disconnect();
             return false;
         }
     }
 
-    /** Devuelve los últimos errores de imap tras un connect() fallido. */
-    public function getLastErrors(): array
-    {
-        return $this->lastErrors;
-    }
-
-    /**
-     * Expone el recurso de conexión (para uso desde SyncService en llamadas directas a imap_*).
-     * @return resource|false|null
-     */
-    public function getConnection()
-    {
-        return $this->connection;
-    }
-
-    /**
-     * Cierra la conexión POP3.
-     */
     public function disconnect(): void
     {
-        if ($this->connection !== null && $this->connection !== false) {
-            @imap_close($this->connection, CL_EXPUNGE);
-            $this->connection = null;
-            Log::info('Pop3Service: Conexión cerrada', [
-                'account' => $this->account->email_address ?? 'unknown',
-            ]);
+        if (is_resource($this->socket)) {
+            @fwrite($this->socket, "QUIT\r\n");
+            @fclose($this->socket);
         }
+        $this->socket = null;
     }
 
-    // -------------------------------------------------------------------------
-    // Operaciones de mensajes
-    // -------------------------------------------------------------------------
-
-    /**
-     * Devuelve el número total de mensajes en el buzón.
-     */
     public function getMessageCount(): int
     {
-        if (!$this->isConnected()) {
-            return 0;
-        }
-
         try {
-            $count = imap_num_msg($this->connection);
-            return $count !== false ? (int) $count : 0;
-        } catch (\Throwable $e) {
-            Log::error('Pop3Service: Error en getMessageCount()', [
-                'account' => $this->account->email_address ?? 'unknown',
-                'error'   => $e->getMessage(),
-            ]);
+            $line = $this->sendCommand('STAT');
+            if (!$this->isOk($line)) return 0;
+            if (preg_match('/^\+OK\s+(\d+)/i', $line, $m)) {
+                return (int)$m[1];
+            }
+            return 0;
+        } catch (\Throwable) {
             return 0;
         }
-    }
-
-    /**
-     * Obtiene todos los UIDLs disponibles (identificadores únicos por mensaje).
-     * En POP3, la extensión imap no expone UIDL nativo, así que usamos
-     * el Message-ID del header como identificador estable.
-     *
-     * @return array<int, string>  ['msg_num' => 'uid_string']
-     */
-    /**
-     * Descarga overviews en batches de $batchSize (más robusto que una sola llamada masiva).
-     * Orden descendente (más recientes primero) para procesar emails nuevos antes.
-     *
-     * @return array<int, object>  ['msg_num' => stdClass{message_id, subject, from, date, size}]
-     */
-    public function getAllOverviews(int $batchSize = 100): array
-    {
-        if (!$this->isConnected()) {
-            return [];
-        }
-
-        $count = $this->getMessageCount();
-        if ($count === 0) return [];
-
-        $result = [];
-
-        // Procesar de más reciente a más antiguo, en batches
-        for ($end = $count; $end >= 1; $end -= $batchSize) {
-            $start     = max(1, $end - $batchSize + 1);
-            $sequence  = "{$start}:{$end}";
-
-            try {
-                $overviews = @imap_fetch_overview($this->connection, $sequence);
-                if (!$overviews) continue;
-
-                foreach ($overviews as $ov) {
-                    $msgNum          = (int) $ov->msgno;
-                    $result[$msgNum] = $ov;
-                }
-            } catch (\Throwable $e) {
-                Log::warning('Pop3Service: Error en batch overview ' . $sequence, [
-                    'account' => $this->account->email_address ?? 'unknown',
-                    'error'   => $e->getMessage(),
-                ]);
-            }
-        }
-
-        // Devolver en orden descendente (más reciente primero)
-        krsort($result);
-        return $result;
     }
 
     public function getAllUidls(): array
     {
-        if (!$this->isConnected()) {
+        try {
+            $head = $this->sendCommand('UIDL');
+            if (!$this->isOk($head)) return [];
+            $lines = $this->readMultiline();
+            $uidls = [];
+            foreach ($lines as $line) {
+                if (preg_match('/^(\d+)\s+(.+)$/', trim($line), $m)) {
+                    $uidls[(int)$m[1]] = trim($m[2]);
+                }
+            }
+            return $uidls;
+        } catch (\Throwable) {
             return [];
         }
-
-        $overviews = $this->getAllOverviews();
-        $uidls     = [];
-
-        foreach ($overviews as $msgNum => $ov) {
-            $messageId = trim($ov->message_id ?? '');
-            $uid = $messageId !== ''
-                ? $messageId
-                : $this->account->imap_host . '_' . $msgNum . '_' . ($ov->size ?? 0);
-            $uidls[$msgNum] = $uid;
-        }
-
-        return $uidls;
     }
 
-    /**
-     * Descarga un mensaje completo (headers + body) y lo devuelve como array estructurado.
-     *
-     * @return array{
-     *     message_id: string,
-     *     subject: string,
-     *     from_name: string,
-     *     from_email: string,
-     *     to_addresses: string,
-     *     cc_addresses: string,
-     *     date: string,
-     *     snippet: string,
-     *     body_text: string,
-     *     body_html: string,
-     *     has_attachments: bool,
-     *     attachments: array
-     * }|null
-     */
     public function fetchMessage(int $msgNum): ?array
     {
-        if (!$this->isConnected()) {
-            return null;
-        }
-
         try {
-            // Obtener headers
-            $headerInfo = @imap_headerinfo($this->connection, $msgNum);
-            if ($headerInfo === false) {
-                Log::warning('Pop3Service: No se pudo obtener headerinfo para mensaje ' . $msgNum);
+            $head = $this->sendCommand("RETR {$msgNum}");
+            if (!$this->isOk($head)) {
                 return null;
             }
 
-            $rawHeader = @imap_fetchheader($this->connection, $msgNum) ?: '';
-
-            // Parsear direcciones
-            $fromName  = '';
-            $fromEmail = '';
-
-            if (!empty($headerInfo->from)) {
-                $from      = $headerInfo->from[0];
-                $fromName  = $this->decodeImapHeader(isset($from->personal) ? $from->personal : '');
-                $fromEmail = strtolower(trim(($from->mailbox ?? '') . '@' . ($from->host ?? '')));
-            }
-
-            $toAddresses = $this->extractAddresses($headerInfo->to ?? []);
-            $ccAddresses = $this->extractAddresses($headerInfo->cc ?? []);
-
-            $subject   = $this->decodeImapHeader($headerInfo->subject ?? '');
-            $messageId = trim($headerInfo->message_id ?? '');
-            $date      = $headerInfo->date ?? '';
-
-            // Obtener body
-            $bodyData = $this->getMessageBody($msgNum);
-
-            $snippet = substr(strip_tags($bodyData['body_text'] ?: strip_tags($bodyData['body_html'])), 0, 200);
+            $raw = implode("\r\n", $this->readMultiline());
+            $parsed = $this->parseRawMessage($raw);
 
             return [
-                'message_id'     => $messageId,
-                'subject'        => $subject,
-                'from_name'      => $fromName,
-                'from_email'     => $fromEmail,
-                'to_addresses'   => json_encode($toAddresses, JSON_UNESCAPED_UNICODE),
-                'cc_addresses'   => json_encode($ccAddresses, JSON_UNESCAPED_UNICODE),
-                'date'           => $date,
-                'snippet'        => $snippet,
-                'body_text'      => $bodyData['body_text'],
-                'body_html'      => $bodyData['body_html'],
-                'has_attachments' => count($bodyData['attachments']) > 0,
-                'attachments'    => $bodyData['attachments'],
+                'message_id'      => $parsed['message_id'],
+                'subject'         => $parsed['subject'],
+                'from_name'       => $parsed['from_name'],
+                'from_email'      => $parsed['from_email'],
+                'to_addresses'    => json_encode($parsed['to_addresses']),
+                'cc_addresses'    => json_encode($parsed['cc_addresses']),
+                'date'            => $parsed['date'],
+                'snippet'         => '',
+                'body_text'       => $parsed['body_text'],
+                'body_html'       => $parsed['body_html'],
+                'has_attachments' => !empty($parsed['attachments']),
+                'attachments'     => $parsed['attachments'],
             ];
         } catch (\Throwable $e) {
-            Log::error('Pop3Service: Error en fetchMessage() para mensaje ' . $msgNum, [
-                'account' => $this->account->email_address ?? 'unknown',
-                'error'   => $e->getMessage(),
-                'trace'   => $e->getTraceAsString(),
-            ]);
+            Log::error('Pop3Service (socket): Error en fetchMessage', ['msgNum' => $msgNum, 'error' => $e->getMessage()]);
             return null;
         }
     }
 
-    /**
-     * Obtiene solo los headers de un mensaje (más rápido que fetchMessage completo).
-     * Útil para verificar duplicados sin descargar el cuerpo.
-     *
-     * @return array{message_id: string, subject: string, from: string, to: string, cc: string, date: string}|null
-     */
-    public function fetchHeadersOnly(int $msgNum): ?array
+    private function sendCommand(string $command): string
     {
-        if (!$this->isConnected()) {
-            return null;
+        if (!is_resource($this->socket)) {
+            throw new \RuntimeException('Socket POP3 no inicializado');
+        }
+        fwrite($this->socket, $command . "\r\n");
+        return $this->readLine();
+    }
+
+    private function readLine(): string
+    {
+        if (!is_resource($this->socket)) {
+            throw new \RuntimeException('Socket POP3 no disponible');
         }
 
-        try {
-            $headerInfo = @imap_headerinfo($this->connection, $msgNum);
-            if ($headerInfo === false) {
-                return null;
+        $line = fgets($this->socket, 8192);
+        if ($line === false) {
+            $meta = stream_get_meta_data($this->socket);
+            if (!empty($meta['timed_out'])) {
+                throw new \RuntimeException('Timeout leyendo del servidor POP3');
             }
+            throw new \RuntimeException('Error leyendo del servidor POP3');
+        }
+        return rtrim($line, "\r\n");
+    }
 
-            $fromParts = [];
-            if (!empty($headerInfo->from)) {
-                $from        = $headerInfo->from[0];
-                $personalDec = $this->decodeImapHeader(isset($from->personal) ? $from->personal : '');
-                $email       = strtolower(($from->mailbox ?? '') . '@' . ($from->host ?? ''));
-
-                $fromParts = $personalDec !== ''
-                    ? $personalDec . ' <' . $email . '>'
-                    : $email;
+    private function readMultiline(): array
+    {
+        $lines = [];
+        while (true) {
+            $line = $this->readLine();
+            if ($line === '.') {
+                break;
             }
-
-            $toParts = [];
-            foreach ($headerInfo->to ?? [] as $addr) {
-                $email    = ($addr->mailbox ?? '') . '@' . ($addr->host ?? '');
-                $personal = $this->decodeImapHeader(isset($addr->personal) ? $addr->personal : '');
-                $toParts[] = $personal !== '' ? $personal . ' <' . $email . '>' : $email;
+            if (str_starts_with($line, '..')) {
+                $line = substr($line, 1);
             }
+            $lines[] = $line;
+        }
+        return $lines;
+    }
 
-            $ccParts = [];
-            foreach ($headerInfo->cc ?? [] as $addr) {
-                $email    = ($addr->mailbox ?? '') . '@' . ($addr->host ?? '');
-                $personal = $this->decodeImapHeader(isset($addr->personal) ? $addr->personal : '');
-                $ccParts[] = $personal !== '' ? $personal . ' <' . $email . '>' : $email;
-            }
+    private function isOk(string $line): bool
+    {
+        return str_starts_with($line, '+OK');
+    }
 
-            return [
-                'message_id' => trim($headerInfo->message_id ?? ''),
-                'subject'    => $this->decodeImapHeader($headerInfo->subject ?? ''),
-                'from'       => is_array($fromParts) ? implode(', ', $fromParts) : (string) $fromParts,
-                'to'         => implode(', ', $toParts),
-                'cc'         => implode(', ', $ccParts),
-                'date'       => $headerInfo->date ?? '',
-            ];
-        } catch (\Throwable $e) {
-            Log::error('Pop3Service: Error en fetchHeadersOnly() para mensaje ' . $msgNum, [
-                'account' => $this->account->email_address ?? 'unknown',
-                'error'   => $e->getMessage(),
-            ]);
-            return null;
+    private function assertOk(string $line, string $command): void
+    {
+        if (!$this->isOk($line)) {
+            throw new \RuntimeException("POP3 {$command} falló: {$line}");
         }
     }
 
-    /**
-     * Extrae el body_text, body_html y attachments de un mensaje.
-     * Navega la estructura MIME recursivamente.
-     *
-     * @return array{body_text: string, body_html: string, attachments: array}
-     */
-    public function getMessageBody(int $msgNum): array
+    private function parseRawMessage(string $raw): array
     {
-        $result = [
-            'body_text'   => '',
-            'body_html'   => '',
-            'attachments' => [],
-        ];
+        $parts = preg_split("/\r\n\r\n|\n\n/", $raw, 2);
+        $rawHeaders = $parts[0] ?? '';
+        $rawBody = $parts[1] ?? '';
 
-        if (!$this->isConnected()) {
-            return $result;
-        }
+        $headers = $this->parseHeaders($rawHeaders);
+        $contentType = strtolower($headers['content-type'] ?? 'text/plain');
+        $mainBoundary = $this->extractBoundary($headers['content-type'] ?? '');
 
-        try {
-            $structure = @imap_fetchstructure($this->connection, $msgNum);
-            if ($structure === false) {
-                // Fallback: intentar descargar el body directamente como texto plano
-                $rawBody = @imap_body($this->connection, $msgNum) ?: '';
-                $result['body_text'] = $rawBody;
-                return $result;
+        $bodyText = '';
+        $bodyHtml = '';
+        $attachments = [];
+
+        if (str_contains($contentType, 'multipart/')) {
+            $boundary = $this->extractBoundary($headers['content-type'] ?? '');
+            if ($boundary !== null) {
+                [$bodyText, $bodyHtml, $attachments] = $this->parseMultipartBody($rawBody, $boundary);
             }
-
-            $this->processMimePart($structure, $msgNum, '', $result);
-        } catch (\Throwable $e) {
-            Log::error('Pop3Service: Error en getMessageBody() para mensaje ' . $msgNum, [
-                'account' => $this->account->email_address ?? 'unknown',
-                'error'   => $e->getMessage(),
-                'trace'   => $e->getTraceAsString(),
-            ]);
-        }
-
-        return $result;
-    }
-
-    // -------------------------------------------------------------------------
-    // Métodos privados de ayuda
-    // -------------------------------------------------------------------------
-
-    /**
-     * Procesa una parte MIME de forma recursiva.
-     * Navega multipart/*, text/plain, text/html, y attachments.
-     */
-    private function processMimePart(object $structure, int $msgNum, string $partNum, array &$result): void
-    {
-        // TYPETEXT=0, TYPEMULTIPART=1, TYPEMESSAGE=2, TYPEAPPLICATION=3, TYPEAUDIO=4, TYPEIMAGE=5, TYPEVIDEO=6, TYPEOTHER=7
-        $type = (int) ($structure->type ?? 0);
-
-        if ($type === TYPEMULTIPART) {
-            // Parte multipart: iterar las sub-partes
-            foreach ($structure->parts as $index => $part) {
-                $subPartNum = $partNum === '' ? (string)($index + 1) : $partNum . '.' . ($index + 1);
-                $this->processMimePart($part, $msgNum, $subPartNum, $result);
-            }
-            return;
-        }
-
-        // Determinar número de sección para imap_fetchbody
-        $sectionNum = $partNum === '' ? '1' : $partNum;
-
-        // Detectar si es adjunto
-        $disposition = '';
-        $filename    = '';
-
-        if (!empty($structure->disposition)) {
-            $disposition = strtolower($structure->disposition);
-        }
-
-        // Intentar obtener el nombre del archivo de los parámetros
-        if (!empty($structure->dparameters)) {
-            foreach ($structure->dparameters as $param) {
-                if (strtolower($param->attribute) === 'filename' || strtolower($param->attribute) === 'filename*') {
-                    $filename = $this->decodeImapHeader($param->value);
-                    break;
-                }
-            }
-        }
-
-        if ($filename === '' && !empty($structure->parameters)) {
-            foreach ($structure->parameters as $param) {
-                if (strtolower($param->attribute) === 'name' || strtolower($param->attribute) === 'name*') {
-                    $filename = $this->decodeImapHeader($param->value);
-                    break;
-                }
-            }
-        }
-
-        $isAttachment = ($disposition === 'attachment') || ($filename !== '' && $type !== TYPETEXT);
-
-        // Obtener el contenido de la sección
-        $rawBody = @imap_fetchbody($this->connection, $msgNum, $sectionNum);
-        if ($rawBody === false) {
-            $rawBody = '';
-        }
-
-        // Decodificar según el encoding de la parte
-        $encoding = (int) ($structure->encoding ?? 0);
-        // 0=7BIT,1=8BIT,2=BINARY,3=BASE64,4=QUOTED-PRINTABLE,5=OTHER
-        $decoded = $this->decodeBody($rawBody, $encoding);
-
-        // Determinar charset
-        $charset = 'UTF-8';
-        if (!empty($structure->parameters)) {
-            foreach ($structure->parameters as $param) {
-                if (strtolower($param->attribute) === 'charset') {
-                    $charset = strtoupper($param->value);
-                    break;
-                }
-            }
-        }
-
-        if ($isAttachment) {
-            $mimeType = $this->getMimeType($structure);
-            $result['attachments'][] = [
-                'filename'   => $filename !== '' ? $filename : 'attachment_' . uniqid(),
-                'mime_type'  => $mimeType,
-                'content'    => $decoded,
-                'size_bytes' => strlen($decoded),
-            ];
-            return;
-        }
-
-        // Es parte de texto
-        if ($type === TYPETEXT) {
-            $subtype = strtolower($structure->subtype ?? 'plain');
-
-            // Convertir a UTF-8 si es necesario
-            if ($charset !== 'UTF-8' && $charset !== '') {
-                $converted = @mb_convert_encoding($decoded, 'UTF-8', $charset);
-                if ($converted !== false) {
-                    $decoded = $converted;
-                }
-            }
-
-            if ($subtype === 'html') {
-                $result['body_html'] .= $decoded;
+        } else {
+            $encoding = strtolower($headers['content-transfer-encoding'] ?? '');
+            $decodedBody = $this->decodeTransfer($rawBody, $encoding);
+            if (str_contains($contentType, 'text/html')) {
+                $bodyHtml = $decodedBody;
             } else {
-                $result['body_text'] .= $decoded;
+                $bodyText = $decodedBody;
             }
-        } elseif ($type === TYPEMESSAGE) {
-            // Mensaje adjunto (message/rfc822) - tratarlo como adjunto
-            $result['attachments'][] = [
-                'filename'   => $filename !== '' ? $filename : 'message_' . uniqid() . '.eml',
-                'mime_type'  => 'message/rfc822',
-                'content'    => $decoded,
-                'size_bytes' => strlen($decoded),
-            ];
         }
-    }
 
-    /**
-     * Decodifica el cuerpo de una parte MIME según su encoding IMAP.
-     */
-    private function decodeBody(string $body, int $encoding): string
-    {
-        switch ($encoding) {
-            case ENC7BIT:    // 0
-            case ENC8BIT:    // 1
-            case ENCBINARY:  // 2
-                return $body;
-
-            case ENCBASE64:  // 3
-                return base64_decode(str_replace(["\r", "\n", " "], '', $body));
-
-            case ENCQUOTEDPRINTABLE: // 4
-                return quoted_printable_decode($body);
-
-            default:
-                return $body;
+        if ($bodyText === '' && $bodyHtml !== '') {
+            $bodyText = trim(strip_tags($bodyHtml));
         }
+
+        // Algunos servidores/formatos dejan el boundary MIME en el cuerpo final.
+        $bodyText = $this->stripMimeBoundaryArtifacts($bodyText, $mainBoundary);
+        $bodyHtml = $this->stripMimeBoundaryArtifacts($bodyHtml, $mainBoundary);
+
+        return [
+            'message_id'  => trim((string)($headers['message-id'] ?? '')),
+            'subject'     => $this->decodeHeader((string)($headers['subject'] ?? '')),
+            'from_name'   => $this->extractName((string)($headers['from'] ?? '')),
+            'from_email'  => $this->extractEmail((string)($headers['from'] ?? '')),
+            'to_addresses'=> $this->parseAddressList((string)($headers['to'] ?? '')),
+            'cc_addresses'=> $this->parseAddressList((string)($headers['cc'] ?? '')),
+            'date'        => (string)($headers['date'] ?? now()->toRfc2822String()),
+            'body_text'   => $bodyText,
+            'body_html'   => $bodyHtml,
+            'attachments' => $attachments,
+        ];
     }
 
-    /**
-     * Construye el tipo MIME de una estructura IMAP.
-     */
-    private function getMimeType(object $structure): string
+    private function parseHeaders(string $rawHeaders): array
     {
-        $types = ['text', 'multipart', 'message', 'application', 'audio', 'image', 'video', 'other'];
-        $type  = $types[(int) ($structure->type ?? 7)] ?? 'other';
-        $sub   = strtolower($structure->subtype ?? 'octet-stream');
-        return $type . '/' . $sub;
+        $rawHeaders = preg_replace("/\r\n[ \t]+/", ' ', $rawHeaders);
+        $lines = preg_split("/\r\n|\n|\r/", (string)$rawHeaders) ?: [];
+        $headers = [];
+        foreach ($lines as $line) {
+            $pos = strpos($line, ':');
+            if ($pos === false) {
+                continue;
+            }
+            $name = strtolower(trim(substr($line, 0, $pos)));
+            $value = trim(substr($line, $pos + 1));
+            if (isset($headers[$name])) {
+                $headers[$name] .= ', ' . $value;
+            } else {
+                $headers[$name] = $value;
+            }
+        }
+        return $headers;
     }
 
-    /**
-     * Extrae un array de direcciones de email desde los objetos stdClass de imap_headerinfo.
-     *
-     * @return array<array{name: string, email: string}>
-     */
-    private function extractAddresses(array $addressObjects): array
+    private function extractBoundary(string $contentType): ?string
     {
-        $addresses = [];
-        foreach ($addressObjects as $addr) {
-            $mailbox = $addr->mailbox ?? '';
-            $host    = $addr->host ?? '';
-            $email   = strtolower($mailbox . ($host !== '' ? '@' . $host : ''));
-            $name    = $this->decodeImapHeader(isset($addr->personal) ? $addr->personal : '');
+        if (preg_match('/boundary="?([^";]+)"?/i', $contentType, $m)) {
+            return $m[1];
+        }
+        return null;
+    }
 
-            if ($email === '' || $email === '@') {
+    private function parseMultipartBody(string $rawBody, string $boundary): array
+    {
+        $text = '';
+        $html = '';
+        $attachments = [];
+        $segments = preg_split('/--' . preg_quote($boundary, '/') . '(?:--)?\r?\n/', $rawBody) ?: [];
+
+        foreach ($segments as $segment) {
+            $segment = trim($segment);
+            if ($segment === '' || $segment === '--') {
                 continue;
             }
 
-            $addresses[] = [
-                'name'  => $name,
-                'email' => $email,
+            $parts = preg_split("/\r\n\r\n|\n\n/", $segment, 2);
+            $h = $this->parseHeaders($parts[0] ?? '');
+            $b = $parts[1] ?? '';
+            $ctype = strtolower($h['content-type'] ?? 'text/plain');
+            $encoding = strtolower($h['content-transfer-encoding'] ?? '');
+            $decoded = $this->decodeTransfer($b, $encoding);
+            $disp = strtolower($h['content-disposition'] ?? '');
+            $filename = $this->extractFilename($h['content-disposition'] ?? '', $h['content-type'] ?? '');
+
+            if (str_contains($ctype, 'multipart/')) {
+                $childBoundary = $this->extractBoundary($h['content-type'] ?? '');
+                if ($childBoundary) {
+                    [$childText, $childHtml, $childAttachments] = $this->parseMultipartBody($decoded, $childBoundary);
+                    if ($text === '' && $childText !== '') $text = $childText;
+                    if ($html === '' && $childHtml !== '') $html = $childHtml;
+                    if (!empty($childAttachments)) $attachments = array_merge($attachments, $childAttachments);
+                }
+                continue;
+            }
+
+            if (str_contains($disp, 'attachment') || ($filename !== '' && !str_contains($ctype, 'text/'))) {
+                $attachments[] = [
+                    'filename'   => $filename ?: ('attachment_' . uniqid('', true)),
+                    'mime_type'  => explode(';', $h['content-type'] ?? 'application/octet-stream')[0],
+                    'content'    => $decoded,
+                    'size_bytes' => strlen($decoded),
+                ];
+                continue;
+            }
+
+            if (str_contains($ctype, 'text/plain') && $text === '') {
+                $text = $decoded;
+                continue;
+            }
+
+            if (str_contains($ctype, 'text/html') && $html === '') {
+                $html = $decoded;
+            }
+        }
+
+        return [$text, $html, $attachments];
+    }
+
+    private function extractFilename(string $disposition, string $contentType): string
+    {
+        if (preg_match('/filename\*?="?([^";]+)"?/i', $disposition, $m)) {
+            return $this->decodeHeader($m[1]);
+        }
+        if (preg_match('/name="?([^";]+)"?/i', $contentType, $m)) {
+            return $this->decodeHeader($m[1]);
+        }
+        return '';
+    }
+
+    private function decodeTransfer(string $body, string $encoding): string
+    {
+        if ($encoding === 'base64') {
+            // En adjuntos POP3 el base64 suele venir con saltos/espacios.
+            $normalized = preg_replace('/\s+/', '', $body) ?? $body;
+            $decoded = base64_decode($normalized, true);
+            if ($decoded === false) {
+                $decoded = base64_decode($normalized, false);
+            }
+            return $decoded === false ? '' : $decoded;
+        }
+
+        if ($encoding === 'quoted-printable') {
+            return quoted_printable_decode($body);
+        }
+
+        return rtrim($body, "\r\n");
+    }
+
+    private function decodeHeader(string $value): string
+    {
+        if ($value === '') return '';
+        if (function_exists('iconv_mime_decode')) {
+            $decoded = @iconv_mime_decode($value, ICONV_MIME_DECODE_CONTINUE_ON_ERROR, 'UTF-8');
+            if ($decoded !== false) return $decoded;
+        }
+        if (function_exists('mb_decode_mimeheader')) {
+            return mb_decode_mimeheader($value);
+        }
+        return $value;
+    }
+
+    private function stripMimeBoundaryArtifacts(string $content, ?string $boundary): string
+    {
+        if ($content === '') {
+            return $content;
+        }
+
+        $clean = $content;
+
+        if (!empty($boundary)) {
+            $quoted = preg_quote($boundary, '/');
+            $clean = preg_replace('/^\s*--' . $quoted . '(?:--)?\s*$/m', '', $clean) ?? $clean;
+        }
+
+        // Limpieza defensiva para delimitadores residuales genéricos.
+        $clean = preg_replace('/^\s*--[A-Za-z0-9_=\-]{12,}(?:--)?\s*$/m', '', $clean) ?? $clean;
+        $clean = preg_replace("/(\r?\n){3,}/", "\n\n", $clean) ?? $clean;
+
+        return trim($clean);
+    }
+
+    private function parseAddressList(string $raw): array
+    {
+        $result = [];
+        if ($raw === '') return $result;
+
+        $items = preg_split('/,(?=(?:[^"]*"[^"]*")*[^"]*$)/', $raw) ?: [];
+        foreach ($items as $item) {
+            $item = trim($item);
+            if ($item === '') continue;
+            $result[] = [
+                'name' => $this->extractName($item),
+                'email' => $this->extractEmail($item),
             ];
         }
-        return $addresses;
+        return $result;
     }
 
-    /**
-     * Decodifica un header MIME usando imap_mime_header_decode o mb_decode_mimeheader.
-     */
-    private function decodeImapHeader(string $header): string
+    private function extractEmail(string $raw): string
     {
-        if ($header === '') {
-            return '';
+        if (preg_match('/<([^>]+)>/', $raw, $m)) {
+            return trim($m[1]);
         }
-
-        if (function_exists('imap_mime_header_decode')) {
-            $elements = @imap_mime_header_decode($header);
-            if ($elements === false) {
-                return $header;
-            }
-
-            $decoded = '';
-            foreach ($elements as $element) {
-                $charset = strtoupper($element->charset ?? 'DEFAULT');
-                $text    = $element->text ?? '';
-
-                if ($charset === 'DEFAULT' || $charset === 'UTF-8') {
-                    $decoded .= $text;
-                } else {
-                    $converted = @mb_convert_encoding($text, 'UTF-8', $charset);
-                    $decoded  .= ($converted !== false) ? $converted : $text;
-                }
-            }
-
-            return $decoded;
+        if (preg_match('/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i', $raw, $m)) {
+            return trim($m[0]);
         }
-
-        return mb_decode_mimeheader($header);
+        return trim($raw);
     }
 
-    /**
-     * Verifica si hay una conexión activa.
-     */
-    private function isConnected(): bool
+    private function extractName(string $raw): string
     {
-        return $this->connection !== null && $this->connection !== false;
+        $raw = trim($raw);
+        if ($raw === '') return '';
+        if (preg_match('/^"?([^"<]+)"?\s*<[^>]+>$/', $raw, $m)) {
+            return trim($this->decodeHeader($m[1]));
+        }
+        return '';
+    }
+
+    private function parseAddresses($addressCollection): array
+    {
+        if (!is_array($addressCollection)) {
+            return [];
+        }
+        $res = [];
+        foreach ($addressCollection as $addr) {
+            $res[] = [
+                'name'  => (string)($addr['name'] ?? ''),
+                'email' => (string)($addr['email'] ?? '')
+            ];
+        }
+        return $res;
+    }
+
+    public function getLastErrors(): array
+    {
+        return $this->lastErrors;
     }
 }
